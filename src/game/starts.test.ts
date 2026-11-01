@@ -51,13 +51,14 @@ describe('simulated developed-world start',()=>{
     expect(held(state)).toBeGreaterThan(0);
   },60_000);
 
-  it.each([42,17])('pays for two PRO robots with conserved material and earned money for seed %i',seed=>{
+  it.each([42,17])('earns a full fleet of two small and three PRO robots for seed %i',seed=>{
     const state=developed(seed), fresh=createGame(seed);
     expect(state.time).toBeGreaterThan(15*60); expect(state.time).toBeLessThanOrEqual(75*60);
     expect(state.ownedTools).toEqual(Object.keys(TOOLS));
     expect(state.player.capacityLevel).toBeGreaterThanOrEqual(2);
     expect(state.vehicles.map(v=>v.kind).sort()).toEqual(['compact','vehicle']);
-    expect(state.robots.map(r=>r.kind).sort()).toEqual(['industrialRobot','industrialRobot','robot']);
+    expect(state.robots).toHaveLength(ECONOMY.maxRobots);
+    expect(state.robots.map(r=>r.kind).sort()).toEqual(['industrialRobot','industrialRobot','industrialRobot','robot','robot']);
     expect(state.buildings.filter(b=>b.kind==='uplink')).toHaveLength(4);
     expect(state.buildings.filter(b=>b.kind==='analyzer')).toHaveLength(6);
     expect(state.buildings.filter(b=>b.kind==='tester')).toHaveLength(6);
@@ -71,7 +72,7 @@ describe('simulated developed-world start',()=>{
     const cost=state.ownedTools.reduce((sum,id)=>sum+TOOLS[id].price,0)
       +ECONOMY.capacity.slice(0,state.player.capacityLevel).reduce((sum,price)=>sum+price,0)
       +ECONOMY.speed.slice(0,state.player.speedLevel).reduce((sum,price)=>sum+price,0)
-      +VEHICLES.compact.price+VEHICLES.vehicle.price+ECONOMY.robot+ECONOMY.industrialRobot+Math.round(ECONOMY.industrialRobot*ECONOMY.robotPriceMultiplier/100)*100
+      +VEHICLES.compact.price+VEHICLES.vehicle.price+1800+2200+75000+90000+108000
       +state.buildings.reduce((sum,b)=>sum+(b.kind==='uplink'?0:BUILDINGS[b.kind].price),0)+2*(BUILDINGS.belt.price-Math.floor(BUILDINGS.belt.price/2));
     expect(state.earned-state.credits).toBe(cost);
     expect(deserializeGame(serializeGame(state))).not.toBeNull();
@@ -88,7 +89,7 @@ describe('simulated developed-world start',()=>{
     }
   },60_000);
 
-  it('reports real simulated time from a fresh game through both PRO milestones',()=>{
+  it('reports real simulated time through every fleet purchase',()=>{
     const progress:DevelopedProgress[]=[];
     const state=createDevelopedGame(42,p=>progress.push(p));
     expect(progress.length).toBeGreaterThan(5);
@@ -96,6 +97,8 @@ describe('simulated developed-world start',()=>{
     expect(progress.at(-1)!.elapsedSeconds).toBeCloseTo(state.time,5);
     expect(progress.some(p=>p.goal==='industrialRobot')).toBe(true);
     expect(progress.some(p=>p.goal==='industrialRobot2')).toBe(true);
+    expect(progress.some(p=>p.goal==='robot2')).toBe(true);
+    expect(progress.some(p=>p.goal==='industrialRobot3')).toBe(true);
     for(let i=1;i<progress.length;i++){
       expect(progress[i].elapsedSeconds).toBeGreaterThanOrEqual(progress[i-1].elapsedSeconds);
       expect(progress[i].percent).toBeGreaterThanOrEqual(progress[i-1].percent);
@@ -108,8 +111,13 @@ describe('simulated developed-world start',()=>{
   it('continues an actual snapshot after save/reload without losing cargo or resetting the world',()=>{
     const state=developed(42), restored=deserializeGame(serializeGame(state))!;
     const before=state.stats.testsSold;
+    const robotsBefore=new Map(state.robots.map(robot=>[robot.id,{...robot}]));
     for(let frame=0;frame<100;frame++)for(const world of [state,restored])updateGame(world,.1,{dx:0,dy:0,clean:false});
     expect(state.stats.testsSold).toBeGreaterThan(before);
+    for(const robot of state.robots){
+      const previous=robotsBefore.get(robot.id)!;
+      expect(Math.hypot(robot.x-previous.x,robot.y-previous.y)>1||robot.bag!==previous.bag).toBe(true);
+    }
     expect(state.dust).toEqual(restored.dust);expect(state.credits).toBe(restored.credits);
     expect(state.stats).toEqual(restored.stats);expect(mass(state)).toBe(state.totalDirt);
     expect(deserializeGame(serializeGame(state))).not.toBeNull();

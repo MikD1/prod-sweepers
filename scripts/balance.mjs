@@ -23,7 +23,7 @@ if (!['parallel', 'network'].includes(layoutStrategy)) throw Error('--layout acc
 if (![1, 2].includes(parallelFactories)) throw Error('--parallel accepts 1 or 2 factory lines.');
 if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff || !Number.isFinite(maxSeconds) || maxSeconds <= 0) throw Error('Use an unsigned 32-bit --seed and positive --minutes.');
 if (args.help === 'true') {
-  console.log('npm run balance -- --mode=network [--warmup=300 --measure=600 --seed=42 --json]\nnpm run balance -- --mode=developed [--seed=42 --json]\nnpm run balance -- --mode=progression --parallel=2 --layout=network [--minutes=75 --seed=42 --json]\n--mode=all (default) includes all financed diagnostics, the shared-input comparison and the real fresh-world replay. Network windows are simulated seconds. Developed mode uses the exact browser progression options, including two PRO robots and a safe return on foot.');
+  console.log('npm run balance -- --mode=network [--warmup=300 --measure=600 --seed=42 --json]\nnpm run balance -- --mode=developed [--seed=42 --json]\nnpm run balance -- --mode=progression --parallel=2 --layout=network [--minutes=75 --seed=42 --json]\n--mode=all (default) includes all financed diagnostics, the shared-input comparison and the real fresh-world replay. Network windows are simulated seconds. Developed mode uses the exact browser progression options, including a full mixed robot fleet and a safe return on foot.');
   process.exit(0);
 }
 const jsonOutput = args.json === 'true';
@@ -36,7 +36,7 @@ try {
   const config = await server.ssrLoadModule('/src/game/types.ts');
   const autoplay = await server.ssrLoadModule('/src/game/autoplay.ts');
   const { createPilot: pilot, drivePilot: drive, metricsSnapshot, progressionSnapshot: snapshot, progressionLayouts, createProgressionReplay, createIndustrialNetworkPlan } = autoplay;
-  const { CELL, GRID_W, GRID_H, WORLD_W, WORLD_H, BUILD_CELL, DIRECTIONS, HUB, SPAWN, TOOLS, BUILDINGS, PROCESSING, LOGISTICS, MATERIALS, RECEIVER_CAPACITY, ECONOMY, VEHICLES, ROBOTS, STATIONS, TERMINALS } = config;
+  const { CELL, GRID_W, GRID_H, WORLD_W, WORLD_H, BUILD_CELL, DIRECTIONS, HUB, SPAWN, TOOLS, BUILDINGS, PROCESSING, LOGISTICS, MATERIALS, RECEIVER_CAPACITY, ECONOMY, VEHICLES, ROBOTS, DEVELOPED_FLEET, STATIONS, TERMINALS } = config;
   const position = building => ({ x: building.gx * BUILD_CELL + BUILD_CELL / 2, y: building.gy * BUILD_CELL + BUILD_CELL / 2 });
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const round = number => Math.round(number * 100) / 100;
@@ -504,7 +504,7 @@ try {
 
     }
 
-    const replay = createProgressionReplay(seed, { parallelFactories, layoutStrategy, maxSeconds, ...(layoutStrategy === 'network' ? { showcaseRobots: 2 } : {}), ...(mode === 'developed' ? { stopAtFirstPro: true, safeHandoff: true } : {}) });
+    const replay = createProgressionReplay(seed, { parallelFactories, layoutStrategy, maxSeconds, ...(layoutStrategy === 'network' ? { robotFleet: { industrialRobot: 2 } } : {}), ...(mode === 'developed' ? { stopAtFirstPro: true, safeHandoff: true, robotFleet: DEVELOPED_FLEET } : {}) });
     const progression = replay.state;
     const purchaseLedger = { tools: 0, capacity: 0, speed: 0, vehicles: 0, robots: 0, construction: 0, demolitionRefunds: 0, rawRecovery: 0 };
     function beforePurchases(state) {

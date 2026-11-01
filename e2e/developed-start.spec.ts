@@ -17,7 +17,7 @@ test('background replay stays responsive and opens a real played world that surv
   test.setTimeout(90_000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.clock.install();await page.goto('/');
-  await expect(page.locator('#developed-start-description')).toContainText('два PRO');
+  await expect(page.locator('#developed-start-description')).toContainText('пять роботов');
   await page.getByRole('button',{name:label,exact:true}).click();
   await expect(page.getByTestId('generation-panel')).toBeVisible();
   await expect(page.getByRole('progressbar',{name:'Прогресс подготовки мира'})).toHaveAttribute('aria-valuenow',/^\d+$/);
@@ -28,7 +28,7 @@ test('background replay stays responsive and opens a real played world that surv
   await page.keyboard.press('Tab');
   const before=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)!),SAVE_KEY);
   expect(before.time).toBeGreaterThan(15*60);expect(before.time).toBeLessThan(75*60);
-  expect(before.robots.map((r:any)=>r.kind).sort()).toEqual(['industrialRobot','industrialRobot','robot']);
+  expect(before.robots.map((r:any)=>r.kind).sort()).toEqual(['industrialRobot','industrialRobot','industrialRobot','robot','robot']);
   expect(before.vehicles).toHaveLength(2);expect(before.ownedTools).toContain('widebrush');
   expect(before.buildings.filter((b:any)=>b.kind==='tester')).toHaveLength(6);
   expect(before.buildings.filter((b:any)=>b.kind==='belt').length).toBeGreaterThan(120);
@@ -49,10 +49,14 @@ test('background replay stays responsive and opens a real played world that surv
   await page.keyboard.press('Tab');await page.clock.runFor(10000);await page.keyboard.press('Tab');
   const after=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)!),SAVE_KEY);
   expect(after.stats.testsSold).toBeGreaterThan(before.stats.testsSold);
+  for(const robot of after.robots){
+    const previous=before.robots.find((r:any)=>r.id===robot.id);
+    expect(Math.hypot(robot.x-previous.x,robot.y-previous.y)>1||robot.bag!==previous.bag).toBe(true);
+  }
   await page.reload();await page.getByRole('button',{name:'Продолжить',exact:true}).click();await page.keyboard.press('Tab');
   const restored=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)!),SAVE_KEY);
   expect(restored.seed).toBe(before.seed);expect(restored.cleaned).toBeGreaterThanOrEqual(after.cleaned);
-  expect(restored.robots).toHaveLength(3);expect(errors).toEqual([]);
+  expect(restored.robots).toHaveLength(5);expect(errors).toEqual([]);
 });
 
 test('cancel and leaving during generation preserve the original save and allow a regular fresh start',async({page})=>{

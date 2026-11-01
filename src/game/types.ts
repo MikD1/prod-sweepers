@@ -55,6 +55,7 @@ export const ROBOTS = {
   robot: { name: 'Робот-пылесос', price: ECONOMY.robot, capacity: 180, speed: 100, rate: 18, radius: 24, remoteDelivery: false },
   industrialRobot: { name: 'Лоттик PRO', price: ECONOMY.industrialRobot, capacity: 1200, speed: 175, rate: 60, radius: 40, remoteDelivery: true },
 } as const;
+export const DEVELOPED_FLEET = { robot: 2, industrialRobot: 3 } as const;
 export const TOOLS: Record<ToolId, { name: string; price: number; radius: number; rate: number; capacity: number; description: string }> = {
   toothbrush: { name: 'Зубная щётка', price: 0, radius: 15, rate: 12, capacity: 120, description: 'Большой мир. Очень маленькая щётка.' },
   handbrush: { name: 'Ручная щётка', price: 400, radius: 24, rate: 25, capacity: 300, description: 'Вдвое быстрее. Уже серьёзный подход.' },

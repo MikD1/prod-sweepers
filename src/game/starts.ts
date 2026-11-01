@@ -1,5 +1,5 @@
 import { createProgressionReplay } from './autoplay';
-import { type GameState } from './types';
+import { DEVELOPED_FLEET, type GameState } from './types';
 
 export interface DevelopedProgress {
   elapsedSeconds: number;
@@ -17,7 +17,7 @@ export function createDevelopedGame(seed = 42, onProgress?: (progress: Developed
     onProgress?.({ elapsedSeconds, targetSeconds, goal, percent });
   };
   report(0, 'handbrush');
-  const replay = createProgressionReplay(seed, { parallelFactories: 2, layoutStrategy: 'network', maxSeconds: 75 * 60, stopAtFirstPro: true, safeHandoff: true, showcaseRobots: 2 });
+  const replay = createProgressionReplay(seed, { parallelFactories: 2, layoutStrategy: 'network', maxSeconds: 75 * 60, stopAtFirstPro: true, safeHandoff: true, robotFleet: DEVELOPED_FLEET });
   let lastReport = 0;
   let previousGoal = replay.goal;
   while (!replay.done) {
@@ -29,7 +29,9 @@ export function createDevelopedGame(seed = 42, onProgress?: (progress: Developed
     }
   }
   const state = replay.state;
-  if (state.robots.filter(robot => robot.kind === 'industrialRobot').length !== 2) throw Error('Replay stopped before both PRO purchases.');
+  if (Object.entries(DEVELOPED_FLEET).some(([kind, count]) => state.robots.filter(robot => robot.kind === kind).length !== count)) {
+    throw Error('Replay stopped before completing the robot fleet purchases.');
+  }
   const remaining = state.dust.reduce((sum, units) => sum + units, 0);
   const held = state.player.bag + state.robots.reduce((sum, robot) => sum + robot.bag, 0)
     + Object.values(state.recovered).reduce((sum, units) => sum + units, 0)

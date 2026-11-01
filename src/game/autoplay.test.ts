@@ -138,4 +138,11 @@ describe('real progression replay', () => {
     expect(() => { while (!replay.done) replay.step(); }).toThrow(/time|limit|budget/i);
     expect(replay.state.robots).toEqual([]); expect(replay.state.credits).toBeLessThan(400);
   });
+  it.each([
+    { robot: 0, industrialRobot: 3 },
+    { robot: 2, industrialRobot: 4 },
+    { robot: 1.5, industrialRobot: 2 },
+  ])('rejects an impossible replay fleet %j instead of bypassing purchase limits', robotFleet => {
+    expect(() => createProgressionReplay(42, { robotFleet })).toThrow(/fleet/i);
+  });
 });

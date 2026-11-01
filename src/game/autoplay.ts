@@ -1,6 +1,6 @@
 import * as engine from './engine';
 import { BUILD_CELL, BUILDINGS, CELL, DIRECTIONS, ECONOMY, GRID_H, GRID_W, HUB, SPAWN, STATIONS, TERMINALS, TOOLS, VEHICLES, WORLD_H, WORLD_W,
-  type ActionResult, type BuildKind, type Building, type Direction, type GameState, type UpgradeId, type Vec } from './types';
+  type ActionResult, type BuildKind, type Building, type Direction, type GameState, type RobotKind, type UpgradeId, type Vec } from './types';
 
 const DT = .1;
 const idle = { dx: 0, dy: 0, clean: false };
@@ -380,7 +380,7 @@ export function drivePilot(controller: Pilot, forcedDestination: Vec | null = nu
   if (controller.stalled > 3) throw Error(`Player navigation stalled at ${player.x},${player.y} toward ${JSON.stringify(next)}`);
 }
 
-export interface ProgressionReplayOptions { parallelFactories?: 1 | 2; layoutStrategy?: 'parallel' | 'network'; maxSeconds?: number; stopAtFirstPro?: boolean; safeHandoff?: boolean; showcaseRobots?: 1 | 2 }
+export interface ProgressionReplayOptions { parallelFactories?: 1 | 2; layoutStrategy?: 'parallel' | 'network'; maxSeconds?: number; stopAtFirstPro?: boolean; safeHandoff?: boolean; robotFleet?: Partial<Record<RobotKind, number>> }
 export type ProgressionMilestone = { id: string } & ReturnType<typeof progressionSnapshot>;
 export interface ProgressionReplay {
   state: GameState; readonly done: boolean; readonly goal: string | null; readonly frames: number;
@@ -393,7 +393,10 @@ export function createProgressionReplay(seed: number, options: ProgressionReplay
   const parallelFactories = options.parallelFactories ?? 2, maxSeconds = options.maxSeconds ?? 75 * 60;
   const stopAtFirstPro = options.stopAtFirstPro ?? false;
   const network = options.layoutStrategy === 'network';
+  const fleet = { robot: 1, industrialRobot: 1, ...options.robotFleet };
   if (![1, 2].includes(parallelFactories) || !Number.isFinite(maxSeconds) || maxSeconds <= 0) throw Error('Invalid replay options.');
+  if (Object.values(fleet).some(count => !Number.isInteger(count) || count < 1)
+    || fleet.robot + fleet.industrialRobot > ECONOMY.maxRobots) throw Error('Invalid replay robot fleet.');
   const state = engine.createGame(seed), controller = createPilot(state, state.buildings.find(b => b.kind === 'uplink')!);
   const { analysisLayout, secondLayout, analysisAnchor, secondAnchor } = progressionLayouts();
   type Goal = [string, 'upgrade' | 'factory' | 'capacity' | 'speed' | 'network' | 'handoff'];
@@ -404,7 +407,8 @@ export function createProgressionReplay(seed: number, options: ProgressionReplay
     ['tester', 'factory'], ...(parallelFactories === 2 ? [['tester2', 'factory'] as Goal] : []),
     ...(network ? [['frontierNetwork', 'network'] as Goal] : []),
     ['widebrush', 'upgrade'], ['vehicle', 'upgrade'], ['industrialRobot', 'upgrade'],
-    ...(options.showcaseRobots === 2 ? [['industrialRobot2', 'upgrade'] as Goal] : []),
+    ...Array.from({ length: fleet.robot - 1 }, (_, index) => [`robot${index + 2}`, 'upgrade'] as Goal),
+    ...Array.from({ length: fleet.industrialRobot - 1 }, (_, index) => [`industrialRobot${index + 2}`, 'upgrade'] as Goal),
     ...(options.safeHandoff ? [['handoff', 'handoff'] as Goal] : []),
     ...(!stopAtFirstPro ? ECONOMY.capacity.slice(2).map((_, index) => [`capacity${index + 3}`, 'capacity'] as Goal) : []),
     ...(!stopAtFirstPro ? ECONOMY.speed.slice(1).map((_, index) => [`speed${index + 2}`, 'speed'] as Goal) : []),
@@ -484,7 +488,7 @@ export function createProgressionReplay(seed: number, options: ProgressionReplay
           }
         }
       } else {
-        const upgrade = (kind === 'capacity' || kind === 'speed' ? kind : id === 'industrialRobot2' ? 'industrialRobot' : id) as UpgradeId;
+        const upgrade = (kind === 'capacity' || kind === 'speed' ? kind : id.startsWith('industrialRobot') ? 'industrialRobot' : id.startsWith('robot') ? 'robot' : id) as UpgradeId;
         const requirement = engine.getUpgradeRequirement(state, upgrade);
         if (requirement) lastBlockedReason = requirement;
         else if (state.credits >= engine.upgradePrice(state, upgrade)) {
