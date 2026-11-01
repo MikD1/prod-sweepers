@@ -1,4 +1,6 @@
 import './style.css';
+import './touch.css';
+import { TouchControls } from './game/touch-controls';
 import {
   buyUpgrade, createGame, equipTool, getCapacity, getContextAction, getBuildRequirement, getBuildPlacementError, getBuildingConnections, getBuildingStatus,
   getNearbyStation, getNearestTerminal, getReceiverCapacity, getRobotStatus, getUpgradeRequirement, getVehicle, getWalkingCapacity, reclaimBugs, sellRecovered,
@@ -62,6 +64,11 @@ let buildMode: { kind: BuildKind | 'remove'; dir: Direction } | null = null;
 let pointer: Vec | null = null;
 let inspectionId: number | null = null;
 let mouseCleaning = false;
+let worldTouchPointer: number | null = null;
+let touchControls: TouchControls | null = null;
+const touchMedia = window.matchMedia('(any-pointer: coarse)');
+let touchMode = touchMedia.matches || navigator.maxTouchPoints > 0;
+document.body.classList.toggle('touch-mode', touchMode);
 let soundEnabled = true;
 let audio: AudioContext | null = null;
 let music: BackgroundMusic | null = null;
@@ -94,6 +101,15 @@ $('#app').innerHTML = `
 
         <div class="bag-panel"><div class="bag-icon">${icon('bag', 26)}</div><div class="bag-content"><div class="bag-heading"><span>КОНТЕЙНЕР БАГОВ</span><span><b data-testid="bag-count" id="bag-count">0</b><span class="muted"> / <span id="bag-capacity">${getCapacity(state)}</span></span></span></div><div class="bag-meter"><i id="bag-progress"></i></div><span id="bag-tip">Маленькая щётка — большое начало</span></div></div>
         <div id="toasts" class="toasts" aria-live="polite"></div>
+        <div id="touch-controls" class="touch-controls" aria-label="Сенсорное управление" hidden>
+          <div id="touch-stick" class="touch-stick" role="group" aria-label="Джойстик движения"><span id="touch-stick-label" class="touch-stick-label">ДВИЖЕНИЕ</span><i id="touch-stick-knob" class="touch-stick-knob" aria-hidden="true"></i></div>
+          <div class="touch-actions">
+            <button id="touch-vehicle" class="touch-secondary" hidden>В машину</button>
+            <button id="touch-interact" class="touch-secondary" disabled>Действие</button>
+            <button id="touch-clean" class="touch-clean" aria-label="Убирать" aria-pressed="false">${icon('brush', 25)}<span>Убирать</span></button>
+            <button id="touch-build-confirm" class="touch-build-confirm" hidden>Построить</button>
+          </div>
+        </div>
       </div>
       <div id="build-panel" class="build-panel" hidden><div class="build-heading"><span class="eyebrow">ФАБРИКА КАЧЕСТВА</span><button id="close-build" class="icon-button" aria-label="Закрыть строительство">${icon('close', 16)}</button></div><div class="build-economy"><span>Баги <b>1</b></span> → <span>Отчёты <b>3</b></span> → <span>Автотесты <b>7</b></span></div><div class="build-items">${(Object.keys(BUILDINGS) as BuildKind[]).map(kind => `<button class="build-item" data-build="${kind}" aria-label="Выбрать ${BUILDINGS[kind].name}">${icon(kind === 'belt' ? 'belt' : kind === 'receiver' ? 'bag' : kind === 'tester' ? 'check' : 'gear')}<span>${BUILDINGS[kind].name}<small>${BUILDINGS[kind].price} кр.</small></span></button>`).join('')}<button class="build-item" data-build="remove" aria-label="Выбрать Демонтаж">${icon('trash')}<span>Демонтаж<small>Возврат кредитов</small></span></button></div><button class="chain-guide-button" data-production-guide aria-label="Посмотреть цепочки">${icon('map', 15)} Карта цепочек <kbd>C</kbd></button><div class="build-tip" id="build-tip">Приёмник → анализатор → тестовый стенд → терминал</div><button id="rotate-build" class="rotate-button" hidden>R <span>Повернуть</span> <span id="build-direction">→</span></button><p class="build-help">Автосоединение с любой стороны. При нескольких выходах капсулы идут по очереди.<br>ЛКМ — строить; Демонтаж — удалить с грузом.<br>Груз после демонтажа хранится у терминала до продажи.</p></div>
     </section>
@@ -111,11 +127,23 @@ const world = $<HTMLCanvasElement>('#world');
 const ctx = world.getContext('2d')!;
 const miniCtx = $<HTMLCanvasElement>('#minimap').getContext('2d')!;
 const titleCtx = $<HTMLCanvasElement>('#title-lotti').getContext('2d')!;
+touchControls = new TouchControls({
+  stick: $('#touch-stick'), knob: $('#touch-stick-knob'), clean: $<HTMLButtonElement>('#touch-clean'),
+  active: () => touchMode && started && !dialog && !document.hidden,
+  onStart: () => { mouseCleaning = false; getAudio(); },
+});
+if (touchMode) $('.title-controls').innerHTML = '<span>Джойстик — движение</span><span>Удерживай «Убирать»</span><span>Играй в своём темпе</span>';
+touchMedia.addEventListener('change', () => {
+  touchMode = touchMedia.matches || navigator.maxTouchPoints > 0;
+  document.body.classList.toggle('touch-mode', touchMode);
+  clearInput(); resize(); updateHud();
+});
 function resize() {
   const rect = world.getBoundingClientRect();
-  const scale = rect.width < 600 ? 1.15 : 1.6;
+  const scale = touchMode || rect.width < 600 ? 1.15 : 1.6;
   world.width = Math.max(260, Math.round(rect.width / scale));
-  world.height = Math.max(240, Math.round(rect.height / scale));
+  world.height = Math.max(touchMode ? 120 : 240, Math.round(rect.height / scale));
+  touchControls?.reset();
   ctx.imageSmoothingEnabled = false;
   camera = { x: Math.max(0, Math.min(WORLD_W - world.width, state.player.x - world.width / 2)), y: Math.max(0, Math.min(WORLD_H - world.height, state.player.y - world.height / 2)) };
 }
@@ -172,7 +200,12 @@ function action(result: ActionResult) {
   toast(result.message, result.ok); if (result.ok) { beep('click'); save(); }
   updateHud();
 }
-function clearInput() { keys.clear(); mouseCleaning = false; }
+function clearInput() {
+  keys.clear(); mouseCleaning = false; touchControls?.reset();
+  if (worldTouchPointer !== null && world.hasPointerCapture(worldTouchPointer)) world.releasePointerCapture(worldTouchPointer);
+  worldTouchPointer = null;
+  $('#touch-controls').hidden = !touchMode || !started || !!dialog;
+}
 function start() {
   if (generationSession) return;
   started = true; dialog = null; $('#title-screen').hidden = true; $('#game-hud').hidden = false;
@@ -285,6 +318,28 @@ $('#mission-close').addEventListener('click', () => setMission(false));
 $('#build-toggle').addEventListener('click', () => setBuild(buildMode ? null : 'belt'));
 $('#close-build').addEventListener('click', () => setBuild(null));
 $('#vehicle-toggle').addEventListener('click', () => action(toggleVehicle(state)));
+$('#touch-vehicle').addEventListener('click', () => { if (started && !dialog) { clearInput(); action(toggleVehicle(state)); } });
+$('#touch-interact').addEventListener('click', () => interactAtPlayer(true));
+$('#touch-build-confirm').addEventListener('click', placeAtPointer);
+
+function hasDeliveryNearby(): boolean {
+  return !!getNearestTerminal(state) || state.buildings.some(building => building.kind === 'receiver'
+    && Math.hypot(state.player.x - (building.gx * BUILD_CELL + 12), state.player.y - (building.gy * BUILD_CELL + 12)) <= 80);
+}
+function interactAtPlayer(touchAction = false) {
+  if (!started || dialog) return;
+  if (!hasDeliveryNearby() && getNearbyStation(state)) openNearbyShop();
+  else if (touchAction && state.player.bag === 0 && getNearestTerminal(state)) {
+    if (Object.values(state.recovered).some(Boolean)) action(sellRecovered(state));
+    else openDialog('terminal');
+  }
+  else action(interact(state));
+}
+function placeAtPointer() {
+  if (!started || dialog || !buildMode || !pointer) return;
+  const gx = Math.floor(pointer.x / BUILD_CELL), gy = Math.floor(pointer.y / BUILD_CELL);
+  action(buildMode.kind === 'remove' ? removeBuilding(state, gx, gy) : placeBuilding(state, buildMode.kind, gx, gy, buildMode.dir));
+}
 
 function setMission(show: boolean) {
   if (!started || dialog) return;
@@ -296,13 +351,15 @@ function setMission(show: boolean) {
 function setBuild(kind: BuildKind | 'remove' | null) {
   if (!started || dialog) return;
   if (kind) { setMission(false); closeBuildingDetails(); }
+  if (kind && touchMode && !buildMode) pointer = null;
   buildMode = kind ? { kind, dir: buildMode?.dir ?? 0 } : null;
   $('#build-panel').hidden = !buildMode;
   $('#build-toggle').classList.toggle('active', !!buildMode);
   $('#world').classList.toggle('building', !!buildMode);
   for (const el of document.querySelectorAll<HTMLElement>('[data-build]')) el.classList.toggle('selected', el.dataset.build === kind);
-  if (kind) $('#build-tip').textContent = kind === 'remove' ? 'Демонтаж: груз отправится на склад терминала. Подойди к терминалу и нажми E, чтобы продать его.' : getBuildRequirement(state, kind) ?? BUILDINGS[kind].description;
+  if (kind) $('#build-tip').textContent = kind === 'remove' ? `Демонтаж: груз отправится на склад терминала. Подойди к терминалу и нажми ${touchMode ? '«Продать склад»' : 'E'}, чтобы продать его.` : getBuildRequirement(state, kind) ?? BUILDINGS[kind].description;
   clearInput();
+  updateHud();
 }
 for (const button of document.querySelectorAll<HTMLElement>('[data-build]')) button.addEventListener('click', () => setBuild(button.dataset.build as BuildKind));
 function rotate() {
@@ -337,14 +394,14 @@ function openNearbyShop() {
   if (station) { openDialog(station === 'workshop' ? 'shop' : 'garage'); return; }
   if (getNearestTerminal(state)) { openDialog('terminal'); return; }
   if (dialog) closeDialog();
-  toast(`Покупки доступны на базе. ${stationDirections()}. Подойди и нажми E или M.`, false);
+  toast(`Покупки доступны на базе. ${stationDirections()}. Подойди и нажми ${touchMode ? 'кнопку магазина' : 'E или M'}.`, false);
 }
 
 const upgradeDetails: Record<string, { name: string; description: string; icon: string }> = {
   capacity: { name: 'Больше контейнер', description: 'Добавляет 50% базовой вместимости рюкзаку и машине. Удваивает запас всех приёмников.', icon: 'bag' },
   speed: { name: 'Быстрые лапки', description: 'Меньше времени на дорогу. Больше — на чистый мир.', icon: 'arrow' },
-  compact: { name: VEHICLES.compact.name, description: `Передняя щётка шириной ${VEHICLES.compact.width} м: ${VEHICLES.compact.rate} багов/с, контейнер от ${VEHICLES.compact.capacity}. W/S — газ и задний ход; A/D — руль. При уборке скорость до ${VEHICLES.compact.cleanSpeed} м/с. На стоянке: V.`, icon: 'rover' },
-  vehicle: { name: VEHICLES.vehicle.name, description: `Передняя щётка шириной ${VEHICLES.vehicle.width} м: ${VEHICLES.vehicle.rate} багов/с, контейнер от ${VEHICLES.vehicle.capacity}. W/S — газ и задний ход; A/D — руль. При уборке скорость до ${VEHICLES.vehicle.cleanSpeed} м/с. На стоянке: V.`, icon: 'rover' },
+  compact: { name: VEHICLES.compact.name, description: `Передняя щётка шириной ${VEHICLES.compact.width} м: ${VEHICLES.compact.rate} багов/с, контейнер от ${VEHICLES.compact.capacity}. ${touchMode ? 'Джойстик вверх/вниз — газ и задний ход, в стороны — руль.' : 'W/S — газ и задний ход; A/D — руль.'} При уборке скорость до ${VEHICLES.compact.cleanSpeed} м/с. На стоянке: ${touchMode ? '«В машину»' : 'V'}.`, icon: 'rover' },
+  vehicle: { name: VEHICLES.vehicle.name, description: `Передняя щётка шириной ${VEHICLES.vehicle.width} м: ${VEHICLES.vehicle.rate} багов/с, контейнер от ${VEHICLES.vehicle.capacity}. ${touchMode ? 'Джойстик вверх/вниз — газ и задний ход, в стороны — руль.' : 'W/S — газ и задний ход; A/D — руль.'} При уборке скорость до ${VEHICLES.vehicle.cleanSpeed} м/с. На стоянке: ${touchMode ? '«В машину»' : 'V'}.`, icon: 'rover' },
   robot: { name: ROBOTS.robot.name, description: `${ROBOTS.robot.rate} багов/с, контейнер ${ROBOTS.robot.capacity}. Ищет баги по всему миру, щётка радиусом ${ROBOTS.robot.radius} м. Отвозит груз в доступный приёмник с линией к любому терминалу.`, icon: 'robot' },
   industrialRobot: { name: ROBOTS.industrialRobot.name, description: `${ROBOTS.industrialRobot.rate} багов/с, контейнер ${ROBOTS.industrialRobot.capacity}. Ищет баги по всему миру, щётка радиусом ${ROBOTS.industrialRobot.radius} м. Передаёт груз удалённо в доступный связанный приёмник.`, icon: 'robot' },
 };
@@ -373,7 +430,7 @@ function warehouseCard() {
   if (!total) return '';
   const value = (Object.keys(MATERIALS) as MaterialKind[]).reduce((sum, material) => sum + state.recovered[material] * MATERIALS[material].value, 0);
   const nearTerminal = !!getNearestTerminal(state);
-  return `<section class="warehouse-panel" data-testid="recovered-panel"><div><span class="eyebrow">СКЛАД ВОЗВРАТА</span><p>Груз после демонтажа сохранён. Продай его у терминала клавишей E.${nearTerminal ? '' : ' Вернись на базу.'}</p><div class="warehouse-items">${(Object.keys(MATERIALS) as MaterialKind[]).map(material => `<span style="--material:${MATERIALS[material].color}">${MATERIALS[material].name} <b data-testid="recovered-${material}">${state.recovered[material]}</b></span>`).join('')}</div></div><button class="buy-button" id="sell-recovered" aria-label="Продать груз со склада" ${nearTerminal ? '' : 'disabled'}>Продать · ${value} кр.</button></section>`;
+  return `<section class="warehouse-panel" data-testid="recovered-panel"><div><span class="eyebrow">СКЛАД ВОЗВРАТА</span><p>Груз после демонтажа сохранён. Продай его у терминала ${touchMode ? 'кнопкой ниже' : 'клавишей E'}.${nearTerminal ? '' : ' Вернись на базу.'}</p><div class="warehouse-items">${(Object.keys(MATERIALS) as MaterialKind[]).map(material => `<span style="--material:${MATERIALS[material].color}">${MATERIALS[material].name} <b data-testid="recovered-${material}">${state.recovered[material]}</b></span>`).join('')}</div></div><button class="buy-button" id="sell-recovered" aria-label="Продать груз со склада" ${nearTerminal ? '' : 'disabled'}>Продать · ${value} кр.</button></section>`;
 }
 function openDialog(kind: Exclude<NonNullable<typeof dialog>, 'generation'>, persist = true) {
   if (generationSession) return;
@@ -392,19 +449,20 @@ function openDialog(kind: Exclude<NonNullable<typeof dialog>, 'generation'>, per
     const station = kind === 'shop' ? 'workshop' : 'garage';
     const place = STATIONS[station];
     const intro = station === 'workshop' ? 'Щётки, контейнеры и быстрые лапки. Всё для твоей следующей смены.' : 'Две машины и до пяти помощников. Купленная техника ждёт на стоянке рядом.';
-    content = `<p class="modal-intro">${intro}</p><div class="station-shop-meta"><span class="station-location" data-testid="station-position">${icon('map', 14)} ${place.x} / ${place.y}</span><div class="shop-balance">${icon('coin', 19)}<b id="shop-credits">${Math.floor(state.credits).toLocaleString('ru')}</b> кредитов</div></div>${station === 'garage' ? `<div class="fleet-summary"><span>${icon('robot', 18)} Помощников <b data-testid="robot-count">${state.robots.length} / ${ECONOMY.maxRobots}</b></span><span>Машин <b>${state.vehicles.length} / ${Object.keys(VEHICLES).length}</b></span></div>` : ''}<div class="shop-grid">${shopCards(station)}</div><p class="modal-footnote">${station === 'workshop' ? 'Купленные щётки переключаются клавишами 1–4. Вместимость от лучшей щётки сохраняется. За техникой и роботами загляни в гараж справа в центре базы.' : 'V рядом с машиной — сесть или выйти; W/S — газ и задний ход, A/D — руль. Для уборки удерживай пробел или ЛКМ: машина замедлится. Роботы работают по всему миру; для доставки нужен свободный приёмник с линией к терминалу. Каждый следующий робот того же типа дороже на 20%; первый робот другого типа сохраняет базовую цену.'}</p>`;
+    content = `<p class="modal-intro">${intro}</p><div class="station-shop-meta"><span class="station-location" data-testid="station-position">${icon('map', 14)} ${place.x} / ${place.y}</span><div class="shop-balance">${icon('coin', 19)}<b id="shop-credits">${Math.floor(state.credits).toLocaleString('ru')}</b> кредитов</div></div>${station === 'garage' ? `<div class="fleet-summary"><span>${icon('robot', 18)} Помощников <b data-testid="robot-count">${state.robots.length} / ${ECONOMY.maxRobots}</b></span><span>Машин <b>${state.vehicles.length} / ${Object.keys(VEHICLES).length}</b></span></div>` : ''}<div class="shop-grid">${shopCards(station)}</div><p class="modal-footnote">${station === 'workshop' ? `${touchMode ? 'Купленные щётки выбираются на нижней панели.' : 'Купленные щётки переключаются клавишами 1–4.'} Вместимость от лучшей щётки сохраняется. За техникой и роботами загляни в гараж справа в центре базы.` : `${touchMode ? 'Рядом с машиной нажми «В машину» или «Выйти». Джойстик вверх/вниз — газ и задний ход, в стороны — руль. Удерживай «Убирать»: машина замедлится.' : 'V рядом с машиной — сесть или выйти; W/S — газ и задний ход, A/D — руль. Для уборки удерживай пробел или ЛКМ: машина замедлится.'} Роботы работают по всему миру; для доставки нужен свободный приёмник с линией к терминалу. Каждый следующий робот того же типа дороже на 20%; первый робот другого типа сохраняет базовую цену.`}</p>`;
   }
   if (kind === 'terminal') {
     const stock = Math.max(0, state.stats.rawSold - state.stats.rawReclaimed);
     const nearTerminal = !!getNearestTerminal(state, state.player, 64);
     const amount = Math.min(ECONOMY.reclaimBatch, stock, Math.max(0, getCapacity(state) - state.player.bag), Math.floor(state.credits / ECONOMY.reclaimPrice));
-    content = `<p class="modal-intro">Любой из четырёх терминалов принимает продукцию и груз со склада. Щётки — в центре базы слева, гараж — справа.</p><div class="shop-balance">${icon('coin', 19)}<b id="shop-credits">${Math.floor(state.credits).toLocaleString('ru')}</b> кредитов</div>${warehouseCard()}${stock > 0 ? `<div class="reclaim-panel"><p>В терминале <b data-testid="raw-stock">${stock}</b> сырых багов. Верни их в контейнер по ${ECONOMY.reclaimPrice} кр., чтобы переработать на фабрике.${nearTerminal ? '' : ' Подойди ближе к терминалу.'}</p><button class="buy-button" id="reclaim-bugs" ${!nearTerminal || amount < 1 ? 'disabled' : ''} aria-label="Вернуть баги из терминала">Забрать ${amount} · ${amount * ECONOMY.reclaimPrice} кр.</button></div>` : '<p class="terminal-empty">Возврат сырья появится после первой продажи багов. Груз разобранных построек хранится здесь до продажи.</p>'}<p class="modal-footnote">E у терминала — продать рюкзак и склад. Баги стоят 1 кредит, отчёты — 3, автотесты — 7. Карта производственных цепочек: C.</p>`;
+    content = `<p class="modal-intro">Любой из четырёх терминалов принимает продукцию и груз со склада. Щётки — в центре базы слева, гараж — справа.</p><div class="shop-balance">${icon('coin', 19)}<b id="shop-credits">${Math.floor(state.credits).toLocaleString('ru')}</b> кредитов</div>${warehouseCard()}${stock > 0 ? `<div class="reclaim-panel"><p>В терминале <b data-testid="raw-stock">${stock}</b> сырых багов. Верни их в контейнер по ${ECONOMY.reclaimPrice} кр., чтобы переработать на фабрике.${nearTerminal ? '' : ' Подойди ближе к терминалу.'}</p><button class="buy-button" id="reclaim-bugs" ${!nearTerminal || amount < 1 ? 'disabled' : ''} aria-label="Вернуть баги из терминала">Забрать ${amount} · ${amount * ECONOMY.reclaimPrice} кр.</button></div>` : '<p class="terminal-empty">Возврат сырья появится после первой продажи багов. Груз разобранных построек хранится здесь до продажи.</p>'}<p class="modal-footnote">${touchMode ? 'У терминала нажми «Сдать баги» или «Продать склад».' : 'E у терминала — продать рюкзак и склад.'} Баги стоят 1 кредит, отчёты — 3, автотесты — 7. ${touchMode ? 'Карта производственных цепочек открывается кнопкой сверху.' : 'Карта производственных цепочек: C.'}</p>`;
   }
-  if (kind === 'production') content = productionGuide(state);
+  if (kind === 'production') content = productionGuide(state, touchMode);
   if (kind === 'overview') content = overviewContent(state);
   if (kind === 'pause') content = `<p class="pause-copy">Даже маленьким лапкам нужен перерыв.<br>Твой мир подождёт.</p><div class="pause-stats"><div><b>${(state.cleaned / Math.max(1, state.totalDirt) * 100).toFixed(1)}%</b><span>мира очищено</span></div><div><b>${state.stats.delivered.toLocaleString('ru')}</b><span>багов сдано</span></div><div><b>${state.discoveries.length}</b><span>мест открыто</span></div></div><button class="start-button" data-resume>Продолжить ${icon('arrow')}</button><button class="text-button" data-reset>Начать новый мир</button><p class="modal-footnote">Прогресс сохраняется автоматически. Мир отдыхает, пока игра закрыта.</p>`;
   if (kind === 'help') content = `<p class="modal-intro">Под багами скрывается прекрасный мир. Поможем ему?</p><div class="help-steps"><article><b>01</b><div><h3>Чисти и исследуй</h3><p>WASD или стрелки — идти. Пробел или левая кнопка мыши — убирать; пешком мышь задаёт направление. В машине W/S — газ и задний ход, A/D — руль. Машина чистит прямоугольной щёткой впереди и замедляется при уборке. Tab открывает большую карту и прогресс.</p></div></article><article><b>02</b><div><h3>Сдавай продукцию на базе</h3><p>На базе четыре терминала по углам. E у любого из них — продать рюкзак и склад после демонтажа. Баги стоят 1 кредит, отчёты — 3, автотесты — 7. M у терминала открывает склад и возврат проданного сырья по ${ECONOMY.reclaimPrice} кредита за штуку. Удалённые приёмники отправляют баги в связанную фабрику.</p></div></article><article><b>03</b><div><h3>Покупай в мастерской и гараже</h3><p>В центре базы слева — ${STATIONS.workshop.name}: щётки, контейнеры и скорость. Справа — ${STATIONS.garage.name}: машины и роботы. Подойди к нужной станции и нажми E или M. Покупки доступны рядом со станцией. Щётки дают контейнеры 120 → 300 → 600 → 1000; переключение на старую щётку сохраняет вместимость. Каждый уровень контейнеров добавляет 50% базового объёма и удваивает приёмники.</p></div></article><article><b>04</b><div><h3>Собери флот и фабрику</h3><p>B — строительство, C — карта цепочек. Первая линия после ручной щётки стоит ${FIRST_LINE_COST} кредитов. Постройки соединяются со всех сторон; несколько выходов получают капсулы по очереди. Демонтаж сохраняет груз на складе терминала. Продай ${ECONOMY.robotReports} отчётов для первого робота, ${ECONOMY.compactReports} — для мини-уборщика, ${ECONOMY.testerReports} — для стенда. Тяжёлая машина открывается после ${ECONOMY.vehicleTests} автотестов и контейнеров II; Лоттик PRO — после неё и ${ECONOMY.robotTests} автотестов. Подробные условия видны в гараже. V рядом с машиной — сесть или выйти. Можно владеть обеими машинами и ${ECONOMY.maxRobots} роботами; следующая покупка того же помощника дороже. Роботы ищут баги по всему миру. Обычный помощник отвозит груз в доступный связанный приёмник, PRO передаёт его удалённо. Приёмник должен вести к любому из четырёх терминалов; если все входы заполнены, робот ждёт с грузом. Tab показывает живую карту: уборка и производство продолжаются. Esc ставит мир на паузу. Сведения о постройке открываются по клику.</p></div></article></div><div class="help-note">Мир ждёт, пока игра закрыта. Покупки — на базе, производство — там, где ты его построишь.</div><button class="chain-guide-button" data-open-production>Посмотреть карту цепочек <kbd>C</kbd></button><button class="start-button" data-resume>Всё понятно ${icon('check')}</button>`;
   if (kind === 'reset') content = `<p class="pause-copy">${resetStart === 'developed' ? 'Начать с развитой базой, фабриками и полным флотом роботов?<br>Текущий прогресс будет заменён развитым миром.' : 'Начать уборку с чистого листа?<br>Текущий прогресс будет заменён новым миром.'}</p><button class="start-button" data-confirm-reset>${resetStart === 'developed' ? 'Начать с развитой базой' : 'Начать новый мир'} ${icon('arrow')}</button><button class="text-button" data-resume>Оставить текущий мир</button>`;
+  if (kind === 'help' && touchMode) content = `<p class="modal-intro">Джойстик слева, уборка справа. Можно играть двумя пальцами.</p><div class="help-steps"><article><b>01</b><div><h3>Чисти и исследуй</h3><p>Веди джойстик в нужную сторону и удерживай «Убирать». Щётка работает перед Лотти. Отпусти джойстик, чтобы остановиться. Кнопка «Обзор» открывает живую карту мира, кнопка паузы наверху останавливает игру.</p></div></article><article><b>02</b><div><h3>Сдавай баги и покупай улучшения</h3><p>Подойди к приёмнику или одному из четырёх терминалов и нажми «Сдать баги». Сырые баги стоят 1 кредит, отчёты — 3, автотесты — 7. Мастерская щёток и гараж находятся в центре базы. Рядом с ними появится кнопка магазина; покупки делаются касанием. Купленные щётки выбираются на нижней панели.</p></div></article><article><b>03</b><div><h3>Води уборочную машину</h3><p>Подойди к купленной машине и нажми «В машину». Джойстик вверх — газ, вниз — задний ход, в стороны — руль. Удерживай «Убирать», чтобы включить переднюю щётку и снизить скорость. Перед выходом разгрузи лишние баги и нажми «Выйти».</p></div></article><article><b>04</b><div><h3>Строй фабрику</h3><p>Нажми «Строить», выбери постройку в полосе наверху, затем коснись клетки в мире. Можно провести пальцем, уточняя место. Подтверди кнопкой «Построить». Для разборки выбери «Демонтаж», укажи постройку и нажми «Снести»: её груз сохранится на складе терминала. Джойстиком можно двигаться и во время строительства. Информация о постройке открывается касанием вне строительства. Постройки соединяются конвейерами с любой стороны, а несколько выходов распределяют капсулы по очереди.</p></div></article></div><div class="help-note">В обзоре мира роботы и фабрика продолжают работать. Магазины и справка приостанавливают игру. При сворачивании страницы управление сбрасывается и включается пауза.</div><button class="chain-guide-button" data-open-production>Посмотреть карту цепочек</button><button class="start-button" data-resume>Всё понятно ${icon('check')}</button>`;
   if (kind === 'complete') content = `<p class="pause-copy">Каждый баг собран. Каждая тропинка чиста.<br>Одна маленькая щётка изменила целый мир.</p><div class="pause-stats"><div><b>${state.cleaned.toLocaleString('ru')}</b><span>багов убрано</span></div><div><b>${Math.round(state.time / 60)}</b><span>минут на смене</span></div></div><button class="start-button" data-resume>Остаться в мире ${icon('arrow')}</button><button class="text-button" data-reset>Начать новое приключение</button>`;
   const stationAttribute = kind === 'shop' ? ' data-station="workshop"' : kind === 'garage' ? ' data-station="garage"' : kind === 'terminal' ? ' data-station="terminal"' : '';
   $('#modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal modal-${kind}" role="dialog" aria-modal="true" aria-label="${title}"${stationAttribute}><div class="modal-heading"><div><span class="eyebrow">PROD SWEEPERS / ${kind === 'shop' || kind === 'garage' ? 'ПОКУПКИ НА БАЗЕ' : kind === 'terminal' ? 'ПРОДУКЦИЯ И СКЛАД' : 'ТВОЙ МИР'}</span><h2>${title}</h2></div><button class="icon-button" id="close-modal" aria-label="Закрыть">${icon('close')}</button></div>${content}</section></div>`;
@@ -478,9 +536,39 @@ function updateBuildingDetails() {
   }
   if (inTransit) rows.push(['В капсулах',String(inTransit)]);
   rows.push(['Соединения',`${ports} · автоматически`]);
-  const note = building.kind === 'uplink' ? 'E — продать рюкзак и склад. M — открыть услуги терминала.'
-    : building.kind === 'receiver' ? 'E рядом — сдать баги. Роботам нужен путь от приёмника к терминалу.' : 'Соседние постройки соединяются с любой стороны.';
+  const note = building.kind === 'uplink' ? touchMode ? 'Рядом нажми «Сдать баги» или «Продать склад». Услуги терминала — кнопкой магазина внизу.' : 'E — продать рюкзак и склад. M — открыть услуги терминала.'
+    : building.kind === 'receiver' ? touchMode ? 'Рядом нажми «Сдать баги». Роботам нужен путь от приёмника к терминалу.' : 'E рядом — сдать баги. Роботам нужен путь от приёмника к терминалу.' : 'Соседние постройки соединяются с любой стороны.';
   $('[data-building-content]').innerHTML = `<dl class="inspection-values">${rows.map(([name,value])=>`<div><dt>${name}</dt><dd>${value}</dd></div>`).join('')}</dl>${progress}<p class="inspection-note">${note}</p>`;
+}
+
+function updateTouchHud() {
+  $('#touch-controls').hidden = !touchMode || !started || !!dialog;
+  if (!touchMode) return;
+  const selected = getVehicle(state);
+  $('#touch-stick-label').textContent = selected ? 'ГАЗ / РУЛЬ' : 'ДВИЖЕНИЕ';
+  const vehicle = selected ?? state.vehicles.find(item => Math.hypot(item.x - state.player.x, item.y - state.player.y) <= 65);
+  const vehicleButton = $('#touch-vehicle');
+  vehicleButton.hidden = !!buildMode || !vehicle;
+  vehicleButton.textContent = selected ? 'Выйти' : 'В машину';
+  vehicleButton.setAttribute('aria-label', selected ? 'Выйти из машины' : 'Сесть в машину');
+  const interactButton = $<HTMLButtonElement>('#touch-interact');
+  const delivery = hasDeliveryNearby(), terminal = getNearestTerminal(state), station = getNearbyStation(state);
+  interactButton.hidden = !!buildMode || !delivery && !station;
+  const recovered = Object.values(state.recovered).some(Boolean);
+  interactButton.textContent = delivery ? state.player.bag > 0 ? 'Сдать баги' : terminal ? recovered ? 'Продать склад' : 'Терминал' : 'Рюкзак пуст'
+    : station ? station === 'garage' ? 'Гараж' : 'Мастерская' : 'Действие';
+  interactButton.disabled = delivery ? state.player.bag === 0 && !terminal : !station;
+  $('#touch-clean').hidden = !!buildMode;
+  const confirm = $<HTMLButtonElement>('#touch-build-confirm');
+  confirm.hidden = !buildMode;
+  confirm.textContent = buildMode?.kind === 'remove' ? 'Снести' : 'Построить';
+  confirm.setAttribute('aria-label', buildMode?.kind === 'remove' ? 'Снести выбранное' : 'Построить выбранное');
+  if (!buildMode || !pointer) { confirm.disabled = true; return; }
+  const gx = Math.floor(pointer.x / BUILD_CELL), gy = Math.floor(pointer.y / BUILD_CELL);
+  if (buildMode.kind === 'remove') {
+    const target = state.buildings.find(building => building.gx === gx && building.gy === gy);
+    confirm.disabled = !target || target.kind === 'uplink' || Math.hypot(state.player.x - (gx * BUILD_CELL + 12), state.player.y - (gy * BUILD_CELL + 12)) > 150;
+  } else confirm.disabled = !!getBuildPlacementError(state, buildMode.kind, gx, gy);
 }
 
 function updateHud() {
@@ -537,66 +625,90 @@ function updateHud() {
   $('#region').textContent = nearby?.name.toUpperCase() ?? 'ЦЕНТРАЛЬНОЕ ПЛАТО';
   const placementError = buildMode && buildMode.kind !== 'remove' && pointer
     ? getBuildPlacementError(state, buildMode.kind, Math.floor(pointer.x / BUILD_CELL), Math.floor(pointer.y / BUILD_CELL)) : null;
-  const deliveryAction = !!getNearestTerminal(state) || state.buildings.some(building => building.kind === 'receiver' && Math.hypot(state.player.x - (building.gx * BUILD_CELL + 12), state.player.y - (building.gy * BUILD_CELL + 12)) <= 80);
-  const context = buildMode ? buildMode.kind === 'remove' ? 'ДЕМОНТАЖ · ЛКМ удалить · груз на склад терминала' : placementError ?? 'АВТОСОЕДИНЕНИЕ · ЛКМ построить · Esc выйти'
+  const deliveryAction = hasDeliveryNearby();
+  const context = buildMode ? touchMode ? placementError ?? (buildMode.kind === 'remove' ? 'Выбери постройку и нажми «Снести»' : pointer ? 'Нажми «Построить», чтобы подтвердить клетку' : 'Коснись клетки в мире, чтобы выбрать место')
+    : buildMode.kind === 'remove' ? 'ДЕМОНТАЖ · ЛКМ удалить · груз на склад терминала' : placementError ?? 'АВТОСОЕДИНЕНИЕ · ЛКМ построить · Esc выйти'
     : nearbyStation && !deliveryAction ? `E / M · ${STATIONS[nearbyStation].name}` : deliveryAction ? 'E · СДАТЬ' : getContextAction(state);
   $('#context-action').dataset.station = nearbyStation && !deliveryAction ? nearbyStation : '';
-  $('#context-action').textContent = context; $('#context-action').hidden = !context;
-  let task = { title: 'Начни с малого', text: 'Выйди за край базы и собери первые 20 багов. Зажми пробел или кнопку мыши.', count: Math.min(state.cleaned, 20), goal: 20, note: 'ПЕРВЫЙ ЧИСТЫЙ СЛЕД' };
-  if (state.cleaned >= 20) task = { title: 'Баги — в дело', text: 'Подойди к любому терминалу в углу базы и сдай контейнер: E.', count: Math.min(state.stats.delivered, 1), goal: 1, note: 'КРЕДИТЫ ЗА НАЙДЕННЫЕ БАГИ' };
+  $('#context-action').textContent = context; $('#context-action').hidden = !context || touchMode && !buildMode;
+  let task = { title: 'Начни с малого', text: touchMode ? 'Выйди за край базы. Двигай джойстик и удерживай «Убирать», чтобы собрать первые 20 багов.' : 'Выйди за край базы и собери первые 20 багов. Зажми пробел или кнопку мыши.', count: Math.min(state.cleaned, 20), goal: 20, note: 'ПЕРВЫЙ ЧИСТЫЙ СЛЕД' };
+  if (state.cleaned >= 20) task = { title: 'Баги — в дело', text: touchMode ? 'Подойди к любому терминалу в углу базы и нажми «Сдать баги».' : 'Подойди к любому терминалу в углу базы и сдай контейнер: E.', count: Math.min(state.stats.delivered, 1), goal: 1, note: 'КРЕДИТЫ ЗА НАЙДЕННЫЕ БАГИ' };
   const toolRank = Math.max(...state.ownedTools.map(id => Object.keys(TOOLS).indexOf(id)));
   const soldProducts = state.stats.reportsSold + state.stats.testsSold;
   const ownsCompact = state.vehicles.some(vehicle => vehicle.kind === 'compact');
   const ownsHeavy = state.vehicles.some(vehicle => vehicle.kind === 'vehicle');
   if (state.stats.delivered > 0) {
-    if (toolRank < 1) task = { title: 'Пора расти', text: 'Ручная щётка ждёт в мастерской слева в центре базы. Подойди и нажми E или M.', count: Math.min(state.credits, TOOLS.handbrush.price), goal: TOOLS.handbrush.price, note: 'МАСТЕРСКАЯ ЩЁТОК · E / M' };
-    else if (!processors.some(b => b.kind === 'analyzer')) task = { title: 'Первая фабрика', text: 'Приёмник → анализатор → конвейер → терминал. Отчёты приносят по 3 кредита. Схема сборки: C.', count: Math.min(state.credits, FIRST_LINE_COST), goal: FIRST_LINE_COST, note: `ПЕРВАЯ ЛИНИЯ · ${FIRST_LINE_COST} КР. · B` };
+    if (toolRank < 1) task = { title: 'Пора расти', text: touchMode ? 'Ручная щётка ждёт в мастерской слева в центре базы. Подойди и нажми кнопку мастерской.' : 'Ручная щётка ждёт в мастерской слева в центре базы. Подойди и нажми E или M.', count: Math.min(state.credits, TOOLS.handbrush.price), goal: TOOLS.handbrush.price, note: touchMode ? 'МАСТЕРСКАЯ ЩЁТОК' : 'МАСТЕРСКАЯ ЩЁТОК · E / M' };
+    else if (!processors.some(b => b.kind === 'analyzer')) task = { title: 'Первая фабрика', text: `Приёмник → анализатор → конвейер → терминал. Отчёты приносят по 3 кредита. ${touchMode ? 'Схема сборки — кнопкой карты цепочек сверху.' : 'Схема сборки: C.'}`, count: Math.min(state.credits, FIRST_LINE_COST), goal: FIRST_LINE_COST, note: `ПЕРВАЯ ЛИНИЯ · ${FIRST_LINE_COST} КР.${touchMode ? '' : ' · B'}` };
     else if (!state.robots.length && soldProducts < ECONOMY.robotReports) task = { title: 'Первый помощник', text: 'Продай отчёты: обычный робот доступен уже в начале фабрики.', count: soldProducts, goal: ECONOMY.robotReports, note: 'РОБОТ-ПЫЛЕСОС · ГАРАЖ' };
-    else if (!state.robots.length) task = { title: 'Делегируй рутину', text: getUpgradeRequirement(state, 'robot') ?? 'Загляни в гараж справа в центре базы. Робот исследует весь мир и отвозит груз в приёмник, связанный с терминалом.', count: Math.min(state.credits, upgradePrice(state, 'robot')), goal: upgradePrice(state, 'robot'), note: 'ГАРАЖ · E / M' };
+    else if (!state.robots.length) task = { title: 'Делегируй рутину', text: getUpgradeRequirement(state, 'robot') ?? 'Загляни в гараж справа в центре базы. Робот исследует весь мир и отвозит груз в приёмник, связанный с терминалом.', count: Math.min(state.credits, upgradePrice(state, 'robot')), goal: upgradePrice(state, 'robot'), note: touchMode ? 'ГАРАЖ' : 'ГАРАЖ · E / M' };
     else if (!ownsCompact && soldProducts < ECONOMY.compactReports) task = { title: 'Для больших рейсов', text: 'Следующие продажи откроют мини-уборщик — небольшую машину для дальних участков.', count: soldProducts, goal: ECONOMY.compactReports, note: 'МИНИ-УБОРЩИК · ГАРАЖ' };
     else if (!ownsCompact && state.player.capacityLevel < 1) task = { title: 'Подготовь контейнеры', text: 'Первый уровень контейнеров открывает мини-уборщик. Покупка — в мастерской щёток.', count: Math.min(state.credits, upgradePrice(state, 'capacity')), goal: upgradePrice(state, 'capacity'), note: 'КОНТЕЙНЕРЫ I · МАСТЕРСКАЯ' };
-    else if (!ownsCompact) task = { title: 'Маленькая большая машина', text: 'Мини-уборщик ждёт в гараже. После покупки подойди к нему и нажми V.', count: Math.min(state.credits, VEHICLES.compact.price), goal: VEHICLES.compact.price, note: 'ГАРАЖ · E / M' };
+    else if (!ownsCompact) task = { title: 'Маленькая большая машина', text: `Мини-уборщик ждёт в гараже. После покупки подойди к нему и нажми ${touchMode ? '«В машину»' : 'V'}.`, count: Math.min(state.credits, VEHICLES.compact.price), goal: VEHICLES.compact.price, note: touchMode ? 'ГАРАЖ' : 'ГАРАЖ · E / M' };
     else if (soldProducts < ECONOMY.testerReports) task = { title: 'Отчёты — в продажу', text: 'Приёмник → анализатор → терминал. Продажи откроют тестовый стенд.', count: soldProducts, goal: ECONOMY.testerReports, note: 'ОТЧЁТ = 3 КРЕДИТА' };
-    else if (!processors.some(b => b.kind === 'tester')) task = { title: 'Следующий уровень', text: 'Добавь тестовый стенд после анализатора. Проведи выход до терминала.', count: Math.min(state.credits, BUILDINGS.tester.price), goal: BUILDINGS.tester.price, note: `ТЕСТОВЫЙ СТЕНД · ${BUILDINGS.tester.price} КР. · B` };
+    else if (!processors.some(b => b.kind === 'tester')) task = { title: 'Следующий уровень', text: 'Добавь тестовый стенд после анализатора. Проведи выход до терминала.', count: Math.min(state.credits, BUILDINGS.tester.price), goal: BUILDINGS.tester.price, note: `ТЕСТОВЫЙ СТЕНД · ${BUILDINGS.tester.price} КР.${touchMode ? '' : ' · B'}` };
     else if (state.stats.testsSold < ECONOMY.vehicleTests) task = { title: 'Проверено автоматически', text: 'Продай автотесты, чтобы открыть уборочную машину. Следи за очередями.', count: state.stats.testsSold, goal: ECONOMY.vehicleTests, note: 'АВТОТЕСТ = 7 КРЕДИТОВ' };
     else if (toolRank < 2) task = { title: 'Большой размах', text: 'Большая щётка в мастерской ускорит уборку и откроет тяжёлую технику.', count: Math.min(state.credits, TOOLS.broom.price), goal: TOOLS.broom.price, note: 'БОЛЬШАЯ ЩЁТКА · МАСТЕРСКАЯ' };
-    else if (state.player.capacityLevel < 2) task = { title: 'Готовь логистику', text: `Улучши вместимость до второго уровня: запас приёмников вырастет до ${RECEIVER_CAPACITY * 4} багов.`, count: Math.min(state.credits, upgradePrice(state, 'capacity')), goal: upgradePrice(state, 'capacity'), note: `КОНТЕЙНЕРЫ ${state.player.capacityLevel + 1} · M` };
+    else if (state.player.capacityLevel < 2) task = { title: 'Готовь логистику', text: `Улучши вместимость до второго уровня: запас приёмников вырастет до ${RECEIVER_CAPACITY * 4} багов.`, count: Math.min(state.credits, upgradePrice(state, 'capacity')), goal: upgradePrice(state, 'capacity'), note: `КОНТЕЙНЕРЫ ${state.player.capacityLevel + 1} · ${touchMode ? 'МАСТЕРСКАЯ' : 'M'}` };
     else if (!ownsHeavy) task = { title: 'Тяжёлый подход', text: `Уборочная машина в гараже: ${VEHICLES.vehicle.capacity} багов за рейс до улучшений и широкий захват.`, count: Math.min(state.credits, VEHICLES.vehicle.price), goal: VEHICLES.vehicle.price, note: 'УБОРОЧНАЯ МАШИНА · ГАРАЖ' };
     else if (state.stats.testsSold < ECONOMY.robotTests) task = { title: 'Профессиональная смена', text: 'Нарасти продажи автотестов для Лоттика PRO. Он ищет баги по всему миру и передаёт груз в связанный приёмник удалённо.', count: state.stats.testsSold, goal: ECONOMY.robotTests, note: 'ЛОТТИК PRO · ГАРАЖ' };
     else if (!state.robots.some(robot => robot.kind === 'industrialRobot') && state.robots.length < ECONOMY.maxRobots) task = { title: 'Лоттик PRO', text: 'Большой помощник доступен в гараже. У флотилии общий лимит: пять роботов.', count: Math.min(state.credits, upgradePrice(state, 'industrialRobot')), goal: upgradePrice(state, 'industrialRobot'), note: 'ПРОМЫШЛЕННЫЙ ПОМОЩНИК · ГАРАЖ' };
-    else task = { title: 'Уборочная империя', text: 'Расширяй фабрику и добавляй приёмники: так роботы реже ждут свободного входа. Живая карта мира — Tab.', count: Math.round(percent * 10) / 10, goal: 100, note: 'БОЛЬШЕ ЛИНИЙ — БОЛЬШЕ ВОЗМОЖНОСТЕЙ' };
+    else task = { title: 'Уборочная империя', text: `Расширяй фабрику и добавляй приёмники: так роботы реже ждут свободного входа. Живая карта мира — ${touchMode ? 'кнопка «Обзор»' : 'Tab'}.`, count: Math.round(percent * 10) / 10, goal: 100, note: 'БОЛЬШЕ ЛИНИЙ — БОЛЬШЕ ВОЗМОЖНОСТЕЙ' };
   }
   $('#mission-title').textContent = task.title; $('#mission-text').textContent = task.text;
   $('#mission-count').textContent = `${task.count} / ${task.goal}`; $('#mission-reward').textContent = task.note;
   $('#mission-progress').style.width = `${Math.min(100, task.count / task.goal * 100)}%`;
   updateBuildingDetails();
+  updateTouchHud();
 }
 
 function pointerWorld(event: PointerEvent | MouseEvent) {
   const r = world.getBoundingClientRect();
   return { x: camera.x + (event.clientX - r.left) * world.width / r.width, y: camera.y + (event.clientY - r.top) * world.height / r.height };
 }
-world.addEventListener('pointermove', event => { pointer = pointerWorld(event); world.classList.toggle('inspectable', !buildMode && !!hitTestBuilding(state,pointer)); });
-world.addEventListener('pointerleave', () => { if (!mouseCleaning) pointer = null; world.classList.remove('inspectable'); });
+world.addEventListener('pointermove', event => {
+  if (event.pointerType === 'touch') {
+    if (worldTouchPointer !== event.pointerId || !buildMode) return;
+    pointer = pointerWorld(event); updateTouchHud(); return;
+  }
+  pointer = pointerWorld(event); world.classList.toggle('inspectable', !buildMode && !!hitTestBuilding(state,pointer));
+});
+world.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch' && !mouseCleaning) pointer = null; world.classList.remove('inspectable'); });
 world.addEventListener('pointerdown', event => {
   if (!started || dialog) return;
   event.preventDefault(); pointer = pointerWorld(event); world.focus({ preventScroll: true });
+  if (event.pointerType === 'touch') {
+    if (worldTouchPointer !== null) return;
+    worldTouchPointer = event.pointerId; mouseCleaning = false; world.setPointerCapture(event.pointerId);
+    if (buildMode) updateHud();
+    else {
+      const building = hitTestBuilding(state, pointer);
+      if (building) showBuildingDetails(building.id); else closeBuildingDetails();
+    }
+    return;
+  }
   if (event.button === 2) { rotate(); return; }
   if (buildMode) {
-    const gx = Math.floor(pointer.x / BUILD_CELL), gy = Math.floor(pointer.y / BUILD_CELL);
-    action(buildMode.kind === 'remove' ? removeBuilding(state, gx, gy) : placeBuilding(state, buildMode.kind, gx, gy, buildMode.dir));
+    placeAtPointer();
   } else {
     const building = hitTestBuilding(state,pointer);
     if (building) { mouseCleaning = false; showBuildingDetails(building.id); return; }
     closeBuildingDetails(); mouseCleaning = true; world.setPointerCapture(event.pointerId);
   }
 });
-window.addEventListener('pointerup', event => { if (event.button === 0) mouseCleaning = false; });
+world.addEventListener('pointerup', event => {
+  if (worldTouchPointer !== event.pointerId) return;
+  worldTouchPointer = null;
+  if (world.hasPointerCapture(event.pointerId)) world.releasePointerCapture(event.pointerId);
+});
+world.addEventListener('lostpointercapture', event => { if (worldTouchPointer === event.pointerId) worldTouchPointer = null; });
+window.addEventListener('pointerup', event => { if (event.pointerType !== 'touch' && event.button === 0) mouseCleaning = false; });
 window.addEventListener('pointercancel', clearInput);
 world.addEventListener('contextmenu', event => event.preventDefault());
 window.addEventListener('blur', () => { clearInput(); if (started && (!dialog || dialog === 'overview')) openDialog('pause'); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && started) { save(); if (!dialog || dialog === 'overview') openDialog('pause'); } });
 window.addEventListener('pagehide', () => {
+  clearInput();
   music?.setPlaying(false);
   if (generationSession) { cancelDevelopedGeneration(); return; }
   if (started) save();
@@ -626,8 +738,7 @@ document.addEventListener('keydown', event => {
   if (event.code === 'KeyB') { setBuild(buildMode ? null : 'belt'); return; }
   if (event.code === 'KeyR' && buildMode) { rotate(); return; }
   if (event.code === 'KeyE') {
-    const deliveryNearby = !!getNearestTerminal(state) || state.buildings.some(building => building.kind === 'receiver' && Math.hypot(state.player.x - (building.gx * BUILD_CELL + 12), state.player.y - (building.gy * BUILD_CELL + 12)) <= 80);
-    if (!deliveryNearby && getNearbyStation(state)) openNearbyShop(); else action(interact(state));
+    interactAtPlayer();
     return;
   }
   if (event.code === 'KeyV') { action(toggleVehicle(state)); return; }
@@ -641,10 +752,10 @@ let lastFrame = performance.now();
 function frame(now: number) {
   const dt = Math.min(.05, Math.max(0, (now - lastFrame) / 1000)); lastFrame = now;
   if (generationSession) { requestAnimationFrame(frame); return; }
-  const cleaning = !dialog && !buildMode && (mouseCleaning || keys.has('Space'));
+  const cleaning = !dialog && !buildMode && (mouseCleaning || keys.has('Space') || !!touchControls?.input.clean);
   if (started && (!dialog || dialog === 'overview') && !document.hidden) {
-    const dx = dialog ? 0 : Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'));
-    const dy = dialog ? 0 : Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp'));
+    const dx = dialog ? 0 : Math.max(-1, Math.min(1, Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft')) + (touchControls?.input.dx ?? 0)));
+    const dy = dialog ? 0 : Math.max(-1, Math.min(1, Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp')) + (touchControls?.input.dy ?? 0)));
     updateGame(state, dt, { dx, dy, clean: cleaning, ...(!dialog && !state.player.riding && mouseCleaning && pointer ? { aimX: pointer.x, aimY: pointer.y } : {}) });
     if (state.cleaned > previousCleaned && now - lastSound > 140) { beep('clean'); lastSound = now; }
     previousCleaned = state.cleaned;

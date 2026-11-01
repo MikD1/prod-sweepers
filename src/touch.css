@@ -1,0 +1,437 @@
+/* Touch layout is enabled by input capability, leaving the desktop layout intact. */
+body.touch-mode {
+  --touch-edge: 18px;
+  --touch-bottom: 16px;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.touch-mode #app { height: 100%; }
+body.touch-mode .game-shell {
+  height: 100dvh;
+  grid-template-rows: calc(64px + env(safe-area-inset-top)) minmax(0, 1fr) calc(64px + env(safe-area-inset-bottom)) 0;
+}
+body.touch-mode .topbar {
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+}
+body.touch-mode .top-actions .icon-button,
+body.touch-mode .modal .icon-button,
+body.touch-mode .mission-toggle,
+body.touch-mode .mission-close,
+body.touch-mode .building-details .icon-button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+body.touch-mode #sound { display: inline-flex; }
+body.touch-mode .bottom-bar {
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body.touch-mode .tool-slot { min-width: 44px; width: 44px; height: 44px; }
+body.touch-mode .action-button { min-height: 44px; }
+body.touch-mode .vehicle-slot,
+body.touch-mode .statusbar,
+body.touch-mode .keyboard-hints,
+body.touch-mode .robot-pill,
+body.touch-mode .production-panel,
+body.touch-mode .region-label { display: none; }
+body.touch-mode .tool-slot kbd,
+body.touch-mode .action-button kbd { display: none; }
+body.touch-mode .bag-panel { top: 218px; right: max(var(--touch-edge), env(safe-area-inset-right)); bottom: auto; width: 230px; padding: 11px 13px; }
+body.touch-mode .bag-content > span { display: none; }
+body.touch-mode .mission-toggle { left: max(var(--touch-edge), env(safe-area-inset-left)); top: 14px; }
+body.touch-mode .world-hud .mission-panel {
+  display: block;
+  left: max(var(--touch-edge), env(safe-area-inset-left));
+  top: 68px;
+  max-height: calc(100% - 238px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.touch-mode .mission-panel > .eyebrow { min-height: 30px; }
+body.touch-mode .mission-close { margin: -8px -9px -8px 0; }
+body.touch-mode .context-pill {
+  bottom: 174px;
+  width: max-content;
+  max-width: min(440px, calc(100% - 36px));
+  padding: 8px 12px;
+  white-space: normal;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+}
+body.touch-mode .toasts { top: 14px; max-width: calc(100% - 580px); }
+body.touch-mode .building-details {
+  left: max(var(--touch-edge), env(safe-area-inset-left));
+  top: 68px;
+  max-height: calc(100% - 238px);
+  overscroll-behavior: contain;
+}
+body.touch-mode .building-details-heading .icon-button { margin: -9px -10px -5px 0; }
+
+.touch-controls { display: none; }
+body.touch-mode .touch-controls {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+body.touch-mode .touch-stick {
+  position: absolute;
+  left: max(var(--touch-edge), env(safe-area-inset-left));
+  bottom: var(--touch-bottom);
+  width: 120px;
+  height: 120px;
+  border: 1px solid #b9f4c077;
+  border-radius: 50%;
+  background: radial-gradient(circle, #81e9a60b 0 45%, #082b24a8 46%);
+  box-shadow: inset 0 0 0 10px #082b2455, 0 3px 0 #001e154d;
+  pointer-events: auto;
+  touch-action: none;
+}
+body.touch-mode .touch-stick::before,
+body.touch-mode .touch-stick::after {
+  content: '';
+  position: absolute;
+  background: #b9f4c030;
+  pointer-events: none;
+}
+body.touch-mode .touch-stick::before { left: 15px; right: 15px; top: 50%; height: 1px; }
+body.touch-mode .touch-stick::after { top: 15px; bottom: 15px; left: 50%; width: 1px; }
+body.touch-mode .touch-stick-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 14px;
+  text-align: center;
+  color: #d2edda;
+  font-size: 7px;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+body.touch-mode .touch-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 1px solid #a5f2bf;
+  border-radius: 50%;
+  background: #316e51ee;
+  box-shadow: inset 0 3px 0 #b9f4c024, 0 3px 0 #001e1566;
+  pointer-events: none;
+  will-change: transform;
+}
+body.touch-mode .touch-stick.active { border-color: var(--mint); background-color: #1f624266; }
+body.touch-mode .touch-actions {
+  position: absolute;
+  right: max(var(--touch-edge), env(safe-area-inset-right));
+  bottom: var(--touch-bottom);
+  display: grid;
+  grid-template-columns: 110px 88px;
+  grid-template-rows: 44px 88px;
+  gap: 8px;
+  align-items: stretch;
+  pointer-events: none;
+}
+body.touch-mode .touch-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #b9f4c077;
+  background: #0b382bec;
+  box-shadow: 0 3px 0 #001e1566;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: auto;
+  touch-action: none;
+}
+body.touch-mode .touch-secondary { border-radius: 8px; }
+body.touch-mode #touch-vehicle { grid-area: 1 / 1; }
+body.touch-mode #touch-interact { grid-area: 1 / 2; }
+body.touch-mode .touch-actions .touch-clean,
+body.touch-mode .touch-actions .touch-build-confirm {
+  grid-area: 2 / 2;
+  flex-direction: column;
+  border-radius: 50%;
+  background: #a0edb7;
+  border-color: #d6ffe1;
+  color: #073b28;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 0 #0a3828aa, inset 0 2px 0 #d6ffe177;
+}
+body.touch-mode .touch-clean svg { width: 26px; height: 26px; }
+body.touch-mode .touch-clean[aria-pressed='true'] {
+  background: #e3ffcf;
+  box-shadow: 0 0 0 5px #81e9a633, inset 0 2px 5px #00402e44;
+  transform: translateY(2px);
+}
+body.touch-mode .touch-actions button:disabled { opacity: .43; }
+body.touch-mode .touch-actions .touch-build-confirm { background: #a4e9ee; border-color: #d3fcff; }
+
+/* A horizontal catalogue keeps placement visible beneath the building tools. */
+body.touch-mode .build-panel {
+  left: 76px;
+  right: max(18px, env(safe-area-inset-right));
+  top: 14px;
+  width: auto;
+  max-width: 900px;
+  max-height: calc(100% - 178px);
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  gap: 6px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+}
+body.touch-mode .build-heading { grid-column: 1 / -1; min-height: 30px; padding-right: 40px; }
+body.touch-mode .build-heading .icon-button { position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; }
+body.touch-mode .build-economy { position: absolute; top: 17px; right: 64px; padding: 0; gap: 6px; }
+body.touch-mode .build-items {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 7px;
+  margin: 0;
+  padding: 0 0 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  scrollbar-width: thin;
+  scrollbar-color: #528168 #09372a;
+}
+body.touch-mode .build-item { flex: 1 0 112px; min-height: 60px; padding: 8px; flex-direction: row; gap: 8px; font-size: 9px; }
+body.touch-mode .build-item svg { width: 21px; height: 21px; }
+body.touch-mode .build-item small { font-size: 7px; }
+body.touch-mode .chain-guide-button { grid-column: 2; grid-row: 3; margin: 0; min-height: 44px; padding: 6px; font-size: 8px; }
+body.touch-mode .chain-guide-button kbd { display: none; }
+body.touch-mode .build-tip { grid-column: 1; grid-row: 3; align-self: center; padding: 0; font-size: 8px; line-height: 1.5; }
+body.touch-mode .rotate-button { grid-column: 1 / -1; min-height: 44px; padding: 8px 12px; }
+body.touch-mode .build-help { display: none; }
+body.touch-mode .world-stage:has(#build-panel:not([hidden])) .bag-panel { display: none; }
+
+/* Menus scroll independently; the game itself always stays within the viewport. */
+body.touch-mode .title-screen {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body.touch-mode .title-content { padding-bottom: 28px; }
+body.touch-mode .title-controls { flex-wrap: wrap; }
+body.touch-mode .title-footer { position: relative; inset: auto; margin: 0 6vw 24px; }
+body.touch-mode .text-button,
+body.touch-mode .developed-start-button { min-height: 44px; }
+body.touch-mode .modal-backdrop {
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  overflow: hidden;
+}
+body.touch-mode .modal {
+  max-width: 100%;
+  max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+  overscroll-behavior: contain;
+  touch-action: auto;
+  -webkit-overflow-scrolling: touch;
+}
+body.touch-mode .modal button { min-height: 44px; }
+body.touch-mode .modal-heading { gap: 12px; }
+body.touch-mode .modal-heading > div { min-width: 0; }
+body.touch-mode .shop-card-text { min-width: 0; }
+body.touch-mode .modal.modal-overview {
+  max-width: 100%;
+  max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+}
+
+@media (max-width: 900px) {
+  body.touch-mode { --touch-edge: 12px; --touch-bottom: 12px; }
+  body.touch-mode .game-shell { grid-template-rows: calc(62px + env(safe-area-inset-top)) minmax(0, 1fr) calc(60px + env(safe-area-inset-bottom)) 0; }
+  body.touch-mode .topbar {
+    display: grid;
+    grid-template-columns: minmax(66px, 1fr) auto;
+    grid-template-rows: 28px 24px;
+    align-content: center;
+    gap: 0 6px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  body.touch-mode .brand { grid-area: 1 / 1; gap: 0; width: max-content; }
+  body.touch-mode .brand-prod { font-size: 24px; letter-spacing: -1.5px; }
+  body.touch-mode .brand-dot { font-size: 9px; margin-top: 1px; }
+  body.touch-mode .brand-game { display: none; }
+  body.touch-mode .top-progress { grid-area: 2 / 1; min-width: 0; margin: 0; }
+  body.touch-mode .top-progress > .eyebrow,
+  body.touch-mode .progress-track { display: none; }
+  body.touch-mode .top-progress > div { margin: 0; gap: 2px; }
+  body.touch-mode .top-progress #clean-percent { font-size: 15px; }
+  body.touch-mode .percent-sign { font-size: 9px; margin: 0; }
+  body.touch-mode .top-actions { grid-area: 1 / 2 / 3; gap: 0; }
+  body.touch-mode .top-actions .icon-button { width: 44px; height: 44px; }
+  body.touch-mode .top-actions .icon-button svg { width: 19px; height: 19px; }
+  body.touch-mode .credits-pill { max-width: 92px; margin-right: 2px; padding-right: 5px; gap: 4px; font-size: 13px; }
+  body.touch-mode .credits-pill svg { width: 16px; height: 16px; }
+  body.touch-mode .credits-label { display: none; }
+  body.touch-mode #credits { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  body.touch-mode .map-panel { display: none; }
+  body.touch-mode .bag-panel { top: 10px; right: max(var(--touch-edge), env(safe-area-inset-right)); bottom: auto; width: min(228px, calc(100% - 80px)); min-height: 44px; padding: 8px 10px; gap: 8px; }
+  body.touch-mode .bag-icon svg { width: 22px; height: 22px; }
+  body.touch-mode .bag-heading { font-size: 7px; gap: 6px; }
+  body.touch-mode .bag-heading b { font-size: 12px; }
+  body.touch-mode .bag-meter { height: 4px; margin-top: 6px; }
+  body.touch-mode .mission-toggle { top: 10px; }
+  body.touch-mode .world-hud .mission-panel { top: 64px; width: min(310px, calc(100% - 24px)); padding: 12px 14px; }
+  body.touch-mode .mission-panel h2 { font-size: 13px; }
+  body.touch-mode .mission-panel p { font-size: 10px; line-height: 1.65; }
+  body.touch-mode .mission-panel > .eyebrow { font-size: 7px; }
+  body.touch-mode .mission-bottom { font-size: 9px; }
+  body.touch-mode .mission-bottom span:last-child { font-size: 6px; }
+  body.touch-mode .building-details { top: 64px; width: min(340px, calc(100% - 24px)); padding: 13px 14px; }
+  body.touch-mode .building-details-description,
+  body.touch-mode .inspection-values > div { font-size: 9px; }
+  body.touch-mode .toasts { top: 66px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); }
+  body.touch-mode .toast { padding: 8px 10px; font-size: 9px; }
+  body.touch-mode .bottom-bar { justify-content: center; gap: 8px; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  body.touch-mode .tool-display { display: none; }
+  body.touch-mode .hotbar,
+  body.touch-mode .footer-actions { gap: 4px; flex-shrink: 0; margin: 0; }
+  body.touch-mode .tool-slot { width: 44px; height: 44px; }
+  body.touch-mode .action-button { justify-content: center; width: 44px; height: 44px; padding: 0; }
+  body.touch-mode .action-button > span { display: none; }
+  body.touch-mode .action-button > svg { width: 21px; height: 21px; }
+  body.touch-mode .pixel-brush { transform: rotate(40deg) scale(.85); }
+  body.touch-mode .build-panel { top: 64px; left: max(var(--touch-edge), env(safe-area-inset-left)); right: max(var(--touch-edge), env(safe-area-inset-right)); max-width: none; max-height: calc(100% - 226px); padding: 8px 10px; gap: 6px 8px; grid-template-columns: minmax(0, 1fr) 104px; }
+  body.touch-mode .build-economy { display: none; }
+  body.touch-mode .build-heading .eyebrow { font-size: 8px; }
+  body.touch-mode .build-item { flex-basis: 110px; min-height: 58px; }
+  body.touch-mode .build-tip { font-size: 7px; }
+  body.touch-mode .title-content { margin: 0 24px; max-width: calc(100% - 48px); padding-top: 32px; padding-bottom: 24px; }
+  body.touch-mode .title-kicker { font-size: 7px; letter-spacing: .8px; }
+  body.touch-mode .title-content h1 { font-size: clamp(46px, 12.2vw, 76px); margin-top: 24px; }
+  body.touch-mode .title-tagline { font-size: 21px; margin-top: 22px; }
+  body.touch-mode .title-description { font-size: 10px; line-height: 1.8; max-width: 360px; margin-top: 14px; }
+  body.touch-mode .title-description br { display: none; }
+  body.touch-mode .title-content > .start-button { margin-top: 24px; min-width: 248px; min-height: 52px; }
+  body.touch-mode .developed-start-button { margin-top: 14px; font-size: 11px; }
+  body.touch-mode .developed-start-description { font-size: 9px; }
+  body.touch-mode .title-controls { font-size: 8px; max-width: 320px; margin-top: 20px; gap: 12px; }
+  body.touch-mode .title-sticker { display: none; }
+  body.touch-mode .title-footer { margin: 0 24px 20px; max-width: none; font-size: 6px; line-height: 1.8; }
+  body.touch-mode .modal { padding: 18px; }
+  body.touch-mode .modal-heading h2 { font-size: 23px; }
+  body.touch-mode .modal-intro { font-size: 10px; }
+  body.touch-mode .shop-card { padding: 12px 10px; gap: 10px; }
+  body.touch-mode .shop-card-icon { min-width: 28px; height: 34px; }
+  body.touch-mode .shop-card-icon svg { width: 26px; height: 26px; }
+  body.touch-mode .shop-card .eyebrow,
+  body.touch-mode .modal-garage .shop-card .eyebrow { font-size: 7px; letter-spacing: .2px; }
+  body.touch-mode .shop-card h3 { font-size: 12px; }
+  body.touch-mode .shop-card p { font-size: 9px; }
+  body.touch-mode .buy-button,
+  body.touch-mode .modal-garage .buy-button { min-width: 76px; padding: 8px; font-size: 11px; }
+  body.touch-mode .buy-button.owned-button { font-size: 9px; }
+  body.touch-mode .buy-button span { font-size: 8px; }
+  body.touch-mode .warehouse-panel,
+  body.touch-mode .reclaim-panel { flex-wrap: wrap; gap: 12px; }
+  body.touch-mode .warehouse-panel > div,
+  body.touch-mode .reclaim-panel p { flex: 1 1 190px; min-width: 0; }
+  body.touch-mode .warehouse-items { flex-wrap: wrap; gap: 10px; }
+  body.touch-mode .chain-cards { grid-template-columns: minmax(0, 1fr); }
+  body.touch-mode .chain-card,
+  body.touch-mode .first-line-guide > div { min-width: 0; }
+  body.touch-mode .first-line-guide { grid-template-columns: minmax(0, 1fr); }
+  body.touch-mode .first-line-guide dl > div { gap: 8px; }
+  body.touch-mode .first-line-guide dd { margin: 0; text-align: right; }
+  body.touch-mode .line-blueprint { grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1.15fr); padding: 10px; }
+  body.touch-mode .chain-card-heading,
+  body.touch-mode .chain-metrics { flex-wrap: wrap; gap: 8px; }
+  body.touch-mode .chain-flow { overflow-x: auto; padding-bottom: 8px; touch-action: pan-x; }
+  body.touch-mode .chain-node { flex: 1 0 94px; }
+  body.touch-mode .chain-node b { font-size: 10px; }
+  body.touch-mode .chain-node small { font-size: 8px; }
+  body.touch-mode .chain-arrow { flex-shrink: 0; }
+  body.touch-mode .overview-layout { grid-template-columns: 1fr; gap: 18px; }
+  body.touch-mode .overview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; gap: 12px; }
+  body.touch-mode .overview-stats > div,
+  body.touch-mode .overview-stats > div:first-child,
+  body.touch-mode .overview-stats > div:last-child { padding: 8px 0; border: 0; }
+  body.touch-mode .overview-stats dt { font-size: 10px; }
+  body.touch-mode .overview-stats dd { font-size: 27px; }
+  body.touch-mode .overview-stats dd small { font-size: 17px; }
+  body.touch-mode .overview-legend { gap: 8px 12px; font-size: 9px; }
+}
+
+@media (max-width: 370px) {
+  body.touch-mode .credits-pill { max-width: 76px; }
+}
+
+/* Landscape phones retain a clear strip of world between the two thumbs. */
+@media (max-height: 500px) and (orientation: landscape) {
+  body.touch-mode { --touch-edge: 14px; --touch-bottom: 8px; }
+  body.touch-mode .game-shell { grid-template-rows: calc(48px + env(safe-area-inset-top)) minmax(0, 1fr) calc(50px + env(safe-area-inset-bottom)) 0; }
+  body.touch-mode .topbar { display: flex; gap: 12px; }
+  body.touch-mode .brand-prod { font-size: 24px; }
+  body.touch-mode .brand-game { display: inline; font-size: 11px; padding-left: 10px; margin-left: 10px; }
+  body.touch-mode .brand-game > span { display: none; }
+  body.touch-mode .top-progress { margin-left: auto; }
+  body.touch-mode .top-progress > .eyebrow { display: none; }
+  body.touch-mode .top-progress #clean-percent { font-size: 17px; }
+  body.touch-mode .top-actions { gap: 0; }
+  body.touch-mode .bottom-bar { gap: 24px; }
+  body.touch-mode .mission-toggle { top: 8px; }
+  body.touch-mode .bag-panel { top: 8px; right: max(var(--touch-edge), env(safe-area-inset-right)); width: 214px; padding: 7px 10px; }
+  body.touch-mode .map-panel { display: none; }
+  body.touch-mode .context-pill { bottom: 16px; max-width: calc(100% - 420px); font-size: 9px; padding: 7px 9px; }
+  body.touch-mode .touch-actions { grid-template-columns: 104px 80px; grid-template-rows: 44px 80px; gap: 6px; }
+  body.touch-mode .touch-clean,
+  body.touch-mode .touch-build-confirm { font-size: 10px; }
+  body.touch-mode .world-hud .mission-panel,
+  body.touch-mode .building-details { left: calc(max(var(--touch-edge), env(safe-area-inset-left)) + 54px); top: 8px; width: min(330px, calc(100% - 310px)); max-height: calc(100% - 144px); padding: 9px 12px; }
+  body.touch-mode .mission-panel h2 { margin-top: 3px; }
+  body.touch-mode .mission-panel p { min-height: 0; }
+  body.touch-mode .toasts { top: 8px; max-width: calc(100% - 540px); }
+  body.touch-mode .build-panel { left: calc(max(var(--touch-edge), env(safe-area-inset-left)) + 54px); right: max(14px, env(safe-area-inset-right)); top: 8px; max-height: calc(100% - 144px); grid-template-columns: minmax(0, 1fr) 104px; gap: 2px 8px; padding: 6px 9px; }
+  body.touch-mode .build-heading { grid-area: 1 / 1; min-height: 22px; }
+  body.touch-mode .build-heading .eyebrow { font-size: 7px; }
+  body.touch-mode .build-heading .icon-button { top: 0; right: 0; }
+  body.touch-mode .build-items { grid-area: 2 / 1; padding-bottom: 4px; gap: 5px; }
+  body.touch-mode .build-item { flex-basis: 108px; min-height: 50px; padding: 5px; gap: 6px; font-size: 8px; }
+  body.touch-mode .build-item small { font-size: 6px; }
+  body.touch-mode .build-tip { grid-area: 1 / 1; justify-self: end; max-width: 60%; padding-left: 10px; font-size: 7px; }
+  body.touch-mode .chain-guide-button { grid-area: 2 / 2; align-self: end; min-height: 44px; margin-right: 0; font-size: 7px; }
+  body.touch-mode .rotate-button { grid-area: 1 / 2; align-self: start; min-height: 44px; width: 60px; margin-top: -1px; padding: 4px 5px; gap: 4px; font-size: 0; }
+  body.touch-mode .rotate-button span:first-child { font-size: 7px; }
+  body.touch-mode .rotate-button span:last-child { font-size: 16px; }
+  body.touch-mode .title-content { margin: 0 28px; padding-top: 22px; max-width: 620px; }
+  body.touch-mode .title-content h1 { font-size: 54px; margin-top: 16px; }
+  body.touch-mode .title-tagline { font-size: 19px; margin-top: 16px; }
+  body.touch-mode .title-description { font-size: 10px; margin-top: 12px; }
+  body.touch-mode .title-content > .start-button { margin-top: 18px; }
+  body.touch-mode .title-footer { margin-left: 28px; margin-right: 28px; }
+  body.touch-mode .modal { padding: 14px 18px; }
+  body.touch-mode .modal-heading { margin-bottom: 8px; }
+  body.touch-mode .modal-overview .overview-layout { grid-template-columns: minmax(0, 1fr) 190px; gap: 20px; }
+  body.touch-mode .modal-overview .overview-stats { grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; }
+  body.touch-mode .modal-overview .overview-stats dd { font-size: 23px; }
+}

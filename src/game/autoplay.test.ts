@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createIndustrialNetworkPlan, createProgressionReplay } from './autoplay';
+import { createIndustrialNetworkPlan, createPilot, createProgressionReplay, drivePilot } from './autoplay';
 import { createGame, placeBuilding, receiverHasRoute, updateGame } from './engine';
 import { deserializeGame, serializeGame } from './persistence';
 import { BUILD_CELL, BUILDINGS, ECONOMY, GRID_W, HUB, MATERIALS, TOOLS, VEHICLES, type GameState } from './types';
@@ -19,6 +19,37 @@ function finish(seed: number) {
 }
 
 describe('real progression replay', () => {
+  it('walks to an allowed 24px construction approach when nearby scenery excludes the narrower 18px search circle', () => {
+    const state = createGame(42);
+    state.landmarks = []; state.dust.fill(0); state.totalDirt = 0;
+    state.obstacles = [
+      { x: 3264, y: 2400, w: 24, h: 24, kind: 'tree' },
+      { x: 3264, y: 2448, w: 24, h: 24, kind: 'tree' },
+    ];
+    Object.assign(state.player, { x: 3198, y: 2370 });
+    const pilot = createPilot(state, state.buildings[0]), target = { x: 3276, y: 2436 };
+    for (let step = 0; step < 100 && Math.hypot(state.player.x - target.x, state.player.y - target.y) >= 24; step++) {
+      const before = { ...state.player };
+      drivePilot(pilot, target, 24);
+      expect(Math.hypot(state.player.x - before.x, state.player.y - before.y)).toBeLessThanOrEqual(11.000001);
+    }
+    expect(Math.hypot(state.player.x - target.x, state.player.y - target.y)).toBeLessThan(24);
+    expect(state.stats.distance).toBeGreaterThan(50);
+  });
+  it('completes the developed-world fleet in the epoch seed whose frontier approach passes between two trees', () => {
+    const replay = createProgressionReplay(2546972568, {
+      parallelFactories: 2, layoutStrategy: 'network', maxSeconds: 4500,
+      stopAtFirstPro: true, safeHandoff: true, robotFleet: { robot: 2, industrialRobot: 3 },
+    });
+    while (!replay.done) replay.step();
+    expect(replay.state.seed).toBe(2546972568);
+    expect(replay.state.robots.filter(robot => robot.kind === 'robot')).toHaveLength(2);
+    expect(replay.state.robots.filter(robot => robot.kind === 'industrialRobot')).toHaveLength(3);
+    expect(replay.state.player.riding).toBe(false);
+    expect(replay.state.player.bag).toBe(0);
+    expect(mass(replay.state)).toBe(replay.state.totalDirt);
+    expect(deserializeGame(serializeGame(replay.state))).not.toBeNull();
+  }, 60_000);
   it('splits one financed receiver through a common trunk into four working lanes with independent product outlets', () => {
     const state = createGame(42);
     // Only this isolated throughput fixture is financed and gate-qualified.

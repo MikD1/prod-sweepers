@@ -343,7 +343,7 @@ export function drivePilot(controller: Pilot, forcedDestination: Vec | null = nu
       return;
     }
     if (!controller.target || distance(controller.target, destination) > 30 || controller.path.length === 0) {
-      const route = controller.findPath(point => distance(point, destination) < (forcedDestination ? Math.min(20,forcedReach*.75) : 20));
+      const route = controller.findPath(point => distance(point, destination) < (forcedDestination ? forcedReach : 20));
       if(!route) throw Error(`No navigable path to ${JSON.stringify(destination)}`);
       controller.path = route?.path ?? [];
       controller.target = destination;
