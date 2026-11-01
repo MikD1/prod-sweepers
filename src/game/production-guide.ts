@@ -1,0 +1,37 @@
+import { getBuildRequirement, getReceiverCapacity } from './engine';
+import { BUILDINGS, LOGISTICS, MATERIALS, PROCESSING, ROBOTS, STRUCTURES, type BuildKind, type GameState, type StructureKind } from './types';
+
+export const FIRST_LINE_COST = BUILDINGS.receiver.price + BUILDINGS.analyzer.price + BUILDINGS.belt.price;
+
+/** The guide reads live recipes and prices, just like construction and sales. */
+export function productionGuide(state: GameState): string {
+  const node = (kind: StructureKind | 'lotti') => {
+    const name = kind === 'lotti' ? 'Лотти + баги' : STRUCTURES[kind].name;
+    const color = kind === 'analyzer' ? MATERIALS.report.color : kind === 'tester' ? MATERIALS.test.color : kind === 'lotti' ? MATERIALS.raw.color : '#81e9a6';
+    const caption = kind === 'lotti' ? 'контейнер' : kind === 'uplink' ? 'любой из четырёх' : kind === 'belt' ? 'автосоединение' : kind === 'receiver' ? 'E · сдать баги' : kind === 'analyzer' ? 'баги → отчёты' : 'отчёты → автотесты';
+    return `<span class="chain-node" style="--node-color:${color}"><b>${name}</b><small>${caption}</small></span>`;
+  };
+  const flow = (kinds: (StructureKind | 'lotti')[]) => `<div class="chain-flow">${kinds.map(node).join('<span class="chain-arrow" aria-hidden="true">→</span>')}</div>`;
+  const recipes: { id: string; title: string; route: (StructureKind | 'lotti')[]; value: number; description: string; cost: number; gate?: BuildKind }[] = [
+    { id: 'raw', title: '01 / Продать сразу', route: ['lotti', 'uplink'], value: MATERIALS.raw.value, description: 'Подойди к терминалу и нажми E. Сразу получишь кредиты за сырые баги.', cost: 0 },
+    { id: 'transport', title: '02 / Доставка без переработки', route: ['receiver', 'belt', 'uplink'], value: MATERIALS.raw.value, description: 'Сам конвейер цену не повышает. Такая линия сокращает рейсы и принимает добычу робота.', cost: BUILDINGS.receiver.price + BUILDINGS.belt.price },
+    { id: 'report', title: '03 / Первая фабрика', route: ['receiver', 'analyzer', 'belt', 'uplink'], value: MATERIALS.report.value, description: 'Анализатор превращает баги в отчёты. Деньги приходят, когда отчёты доезжают до терминала.', cost: FIRST_LINE_COST, gate: 'analyzer' },
+    { id: 'test', title: '04 / Полная проверка', route: ['receiver', 'analyzer', 'tester', 'belt', 'uplink'], value: MATERIALS.test.value, description: `Тестовый стенд превращает отчёты в автотесты. Число единиц сохраняется: дорожает сам материал. До ${PROCESSING.tester.batch} отчётов за ${PROCESSING.tester.cycle.toLocaleString('ru')} с.`, cost: FIRST_LINE_COST + BUILDINGS.tester.price, gate: 'tester' },
+  ];
+  const cards = recipes.map(recipe => {
+    const requirement = recipe.gate ? getBuildRequirement(state, recipe.gate) : null;
+    return `<article class="chain-card" data-testid="chain-${recipe.id}"><div class="chain-card-heading"><h3>${recipe.title}</h3><span class="chain-payout">8 багов → <b>${8 * recipe.value} кр.</b></span></div>${flow(recipe.route)}<p>${recipe.description}</p><div class="chain-metrics"><span>${recipe.cost ? `Постройки: ${recipe.cost} кр.` : 'Постройки не нужны'}</span><span>${recipe.value} кр. / единицу</span></div>${requirement ? `<p class="chain-gate">${requirement}</p>` : ''}</article>`;
+  }).join('');
+  const batch = PROCESSING.analyzer.batch;
+  return `<p class="modal-intro">Одни и те же баги приносят больше после переработки. Конвейеры только доставляют груз.</p>
+    <div class="chain-cards">${cards}</div>
+    <section class="first-line-guide"><div><span class="eyebrow">ПОСТРОЙ У ЛЮБОГО УГЛОВОГО ТЕРМИНАЛА</span><h3>Первая линия за <b data-testid="first-line-cost">${FIRST_LINE_COST} кр.</b></h3><p>Нужна ручная щётка. Нажми B и поставь три постройки в соседние клетки, как на схеме. Соединения появляются автоматически с любой стороны. Поворачивать постройки не нужно: достаточно соседних клеток без разрывов.</p><p>На базе четыре терминала: к каждому можно вести независимые линии из своего района. Сдавай баги в <b>приёмник</b> клавишей E. Анализатор напрямую рюкзак не разгружает.</p><dl><div><dt>Приёмник</dt><dd>${BUILDINGS.receiver.price} кр. · запас ${getReceiverCapacity(state)}</dd></div><div><dt>Анализатор</dt><dd>${BUILDINGS.analyzer.price} кр. · до ${batch} багов за ${PROCESSING.analyzer.cycle.toLocaleString('ru')} с</dd></div><div><dt>Конвейер</dt><dd>${BUILDINGS.belt.price} кр. · автосоединение</dd></div></dl></div>
+      <div class="line-blueprint" role="img" aria-label="Схема: приёмник передаёт вправо в анализатор; анализатор вверх, затем конвейер вверх к терминалу на базе">
+        <div class="blueprint-node blueprint-terminal"><b>Терминал</b><small>один из четырёх</small></div><span class="blueprint-up blueprint-up-top">↑</span><div class="blueprint-node blueprint-belt"><b>Конвейер</b></div><span class="blueprint-up blueprint-up-bottom">↑</span><div class="blueprint-node blueprint-receiver"><b>Приёмник</b><small>E · сюда баги</small></div><span class="blueprint-right">→</span><div class="blueprint-node blueprint-analyzer"><b>Анализатор</b><small>отчёты по 3 кр.</small></div>
+      </div>
+    </section>
+    <div class="help-note">Постройки можно соединять напрямую соседними клетками. Конвейеры нужны для промежутков и поворотов. Все элементы соединяются с четырёх сторон. При нескольких выходах капсулы идут в них по очереди, пропуская заполненные. Машины принимают только подходящий материал; повторная обработка в такой же машине цену не повышает.<br>Скорость продаж зависит от обработки и доставки. Заполненные буферы и разрывы линии останавливают поток, сохраняя груз. Расширяй фабрику параллельными линиями у разных терминалов. Загруженную постройку можно разобрать: груз попадёт на склад терминала. Нажми E у терминала, чтобы продать его. Незавершённая обработка возвращает исходный материал.</div>
+    <div class="help-note"><b>Один приёмник → четыре параллельные ветки.</b> Раздели общую сырьевую магистраль на четыре пути: на каждом свой анализатор, затем тестовый стенд. Готовую продукцию веди отдельными лентами к свободным портам терминалов: общий узкий выход снова ограничит поток. При запасе от ${LOGISTICS.rawCapsuleUnits} багов приёмник упаковывает их по ${LOGISTICS.rawCapsuleUnits}; малые грузы отправляются по ${LOGISTICS.capsuleUnits} или остатком. Поэтому одна сырьевая лента может снабжать несколько проверок. Четыре пары машин стоят ${4*(BUILDINGS.analyzer.price+BUILDINGS.tester.price)} кр., дополнительно нужны приёмник и ленты по ${BUILDINGS.belt.price} кр. за клетку. При малом притоке сырья новые ветки будут простаивать; они окупаются при росте добычи и очереди в одной цепочке.</div>
+    <div class="help-note"><b>Удалённые районы и роботы.</b> Оба типа роботов ищут баги по всей карте. Малый робот собирает до ${ROBOTS.robot.rate} багов/с и отвозит контейнер к подключённому приёмнику: дальняя магистраль сокращает обратный путь. Лоттик PRO собирает до ${ROBOTS.industrialRobot.rate} багов/с и отправляет груз в доступные подключённые приёмники без обратного рейса. Его контейнер вмещает ${ROBOTS.industrialRobot.capacity} багов. Полные буферы останавливают выгрузку, разрыв линии сохраняет груз. Один тестовый стенд обрабатывает до ${PROCESSING.tester.batch / PROCESSING.tester.cycle} единиц/с: для потока от PRO нужны параллельные цепочки. Приёмники и конвейеры помогают с доставкой, анализаторы и стенды — с переработкой.</div>
+    <button class="start-button" data-resume>Вернуться к уборке <span aria-hidden="true">→</span></button>`;
+}
